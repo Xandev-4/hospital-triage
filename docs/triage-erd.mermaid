@@ -1,0 +1,85 @@
+erDiagram
+    USERS {
+        uuid id PK
+        string role "patient | receptionist | doctor"
+        string name
+        string email UK
+        string password_hash
+        uuid patient_id FK "nullable, set for role=patient"
+        timestamp created_at
+    }
+
+    PATIENTS {
+        uuid id PK
+        string name
+        string phone_number
+        timestamp created_at
+    }
+
+    CONSENT {
+        uuid id PK
+        uuid patient_id FK
+        string given_by "self | staff"
+        uuid staff_id FK "nullable, required if given_by=staff"
+        string policy_version
+        timestamp given_at
+    }
+
+    TRIAGE_CASES {
+        uuid id PK
+        uuid patient_id FK
+        uuid created_by FK "receptionist or self (user id)"
+        uuid consent_id FK
+        string mode "self | assisted"
+        string status "submitted|processing|queued|manual_fallback|assigned|closed|withdrawn"
+        string case_type "walk_in | follow_up"
+        text chief_complaint
+        string duration
+        text symptoms
+        jsonb vitals
+        string risk_level "low|medium|high|critical"
+        boolean ai_rules_disagreement
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    CASE_UPLOADS {
+        uuid id PK
+        uuid case_id FK
+        string modality "voice | image_ocr"
+        string file_path
+        string mime_type
+        int file_size
+        timestamp uploaded_at
+    }
+
+    CASE_REPORT_VERSIONS {
+        uuid id PK
+        uuid case_id FK
+        int version_number
+        string source "ai | doctor_edit | manual"
+        jsonb content "chief_complaint, duration, symptoms, vitals, missing_info"
+        uuid edited_by FK "nullable, doctor user id"
+        timestamp created_at
+    }
+
+    AUDIT_LOG {
+        uuid id PK
+        uuid case_id FK "nullable for non-case events e.g. patient_search"
+        uuid actor_id FK
+        string event_type "consent_given|intake_submitted|ai_report_generated|status_changed|report_edited|risk_overridden|assigned|closed|patient_search|patient_created"
+        jsonb metadata "e.g. {from,to} for status_changed, reason for risk override"
+        timestamp created_at
+    }
+
+    USERS ||--o| PATIENTS : "is patient record for (self-registered patients only)"
+    PATIENTS ||--o{ CONSENT : gives
+    USERS ||--o{ CONSENT : "confirms as staff"
+    PATIENTS ||--o{ TRIAGE_CASES : "is subject of"
+    USERS ||--o{ TRIAGE_CASES : "creates (receptionist or self)"
+    CONSENT ||--o{ TRIAGE_CASES : "authorizes (within 30 min window)"
+    TRIAGE_CASES ||--o{ CASE_UPLOADS : has
+    TRIAGE_CASES ||--o{ CASE_REPORT_VERSIONS : has
+    USERS ||--o{ CASE_REPORT_VERSIONS : "edits (doctor)"
+    TRIAGE_CASES ||--o{ AUDIT_LOG : generates
+    USERS ||--o{ AUDIT_LOG : "performs action as actor"
