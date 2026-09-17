@@ -4,6 +4,17 @@ Running log of decisions and progress. Newest entries at the top.
 
 ---
 
+## Entry — Fail-fast typed environment configuration
+
+**What was done:**
+
+- Built out `src/shared/config/env.ts` with a `required(name)` validation function to enforce fail-fast behavior at startup for critical variables (`DATABASE_URL`, `JWT_SECRET`).
+- Exported a unified, typed `env` configuration object with sensible defaults for `port`, `nodeEnv`, and `jwtExpiresIn`.
+- Updated `src/shared/config/db.ts` to consume `env.databaseUrl`, eliminating raw unvalidated `process.env` access and redundant `dotenv` imports across the codebase.
+- Verified both success and failure cases: confirmed loud, immediate startup failure when required variables are missing and validated clean runtime execution.
+
+---
+
 ## Entry — Drizzle ORM implementation, schema hardening, Prettier, and migrations
 
 **What was done:**

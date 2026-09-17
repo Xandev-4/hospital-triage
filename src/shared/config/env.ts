@@ -1,11 +1,17 @@
 import "dotenv/config";
 
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required env var: ${name}`);
+  }
+  return value;
+}
+
 export const env = {
-  PORT: parseInt(process.env.PORT || "8000", 10),
-  NODE_ENV: process.env.NODE_ENV || "development",
-  DATABASE_URL: process.env.DATABASE_URL || "",
-  DATABASE_URL_POOLED: process.env.DATABASE_URL_POOLED || "",
-  JWT_SECRET:
-    process.env.JWT_SECRET || "default_jwt_secret_change_in_production",
-  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "7d",
+  port: Number(process.env.PORT) || 8000,
+  nodeEnv: process.env.NODE_ENV || "development",
+  databaseUrl: required("DATABASE_URL"),
+  jwtSecret: required("JWT_SECRET"),
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
 };
