@@ -3,6 +3,7 @@
 Hackathon Problem Statement 3. This is the single source of truth for the project — when in doubt, this doc wins over memory of a past conversation.
 
 Companion docs (do not duplicate here, link out):
+
 - `docs/build-roadmap.md` — full V1/V2/V3 phase breakdown
 - `docs/api-reference.md` — full endpoint list + role matrix
 - `docs/frontend-pages.md` — page-by-page UI spec
@@ -30,13 +31,13 @@ These hold at every build stage — never weakened to make room for a feature:
 
 ## 4. User Roles
 
-| Role | Function | Introduced |
-|---|---|---|
-| Patient | Self-service intake from home | V1 |
-| Receptionist | Assisted intake from the hospital; confirms consent on patient's behalf | V1 |
-| Doctor | V1: reviews AI-tagged queue *and* makes human assignment (coordinator behavior folded in). V2 onward: reviews assigned case, treats, may escalate | V1 |
-| Triage Coordinator | Reviews AI-tagged queue, manually assigns a specific doctor | V2 (split back out from Doctor) |
-| Admin | Manages facility, users, audit logs | V3 (optional) |
+| Role               | Function                                                                                                                                          | Introduced                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Patient            | Self-service intake from home                                                                                                                     | V1                              |
+| Receptionist       | Assisted intake from the hospital; confirms consent on patient's behalf                                                                           | V1                              |
+| Doctor             | V1: reviews AI-tagged queue _and_ makes human assignment (coordinator behavior folded in). V2 onward: reviews assigned case, treats, may escalate | V1                              |
+| Triage Coordinator | Reviews AI-tagged queue, manually assigns a specific doctor                                                                                       | V2 (split back out from Doctor) |
+| Admin              | Manages facility, users, audit logs                                                                                                               | V3 (optional)                   |
 
 **V1 simplification, stated plainly:** the full design has 5 roles including a distinct Coordinator. V1 folds Coordinator into Doctor to keep the human-assignment step to one role. The rule "AI never assigns a specific doctor" still holds either way — this is a role-count simplification, not a safety simplification. V2 restores the split.
 
@@ -69,17 +70,17 @@ V1 (reduced): `submitted → processing → queued → assigned → closed`
 
 Also exists structurally from V1: `manual_fallback` (AI/OCR couldn't extract cleanly) and `withdrawn` (reserved field; patient-facing revoke action is V3).
 
-`case_type` (`walk_in` vs `follow_up`, from V3) is independent of `status` — one records *why* a case exists, the other records *where it is in the pipeline*.
+`case_type` (`walk_in` vs `follow_up`, from V3) is independent of `status` — one records _why_ a case exists, the other records _where it is in the pipeline_.
 
 ## 8. AI vs Human Responsibility
 
-| AI does | Human does |
-|---|---|
-| Summarizes symptoms/reports | Makes the actual doctor assignment |
-| Applies the rules-based risk tag | Can override/edit the AI summary (versioned) |
-| Suggests a department | Can change the risk level (must state a reason) |
-| Drafts follow-up questions | Makes all clinical decisions |
-| Never assigns a specific doctor | Reviews and sends referrals |
+| AI does                          | Human does                                      |
+| -------------------------------- | ----------------------------------------------- |
+| Summarizes symptoms/reports      | Makes the actual doctor assignment              |
+| Applies the rules-based risk tag | Can override/edit the AI summary (versioned)    |
+| Suggests a department            | Can change the risk level (must state a reason) |
+| Drafts follow-up questions       | Makes all clinical decisions                    |
+| Never assigns a specific doctor  | Reviews and sends referrals                     |
 
 If AI and the rules engine disagree, **the rules engine result wins**, and the disagreement is shown to the reviewer, not hidden.
 
@@ -115,12 +116,12 @@ If AI and the rules engine disagree, **the rules engine result wins**, and the d
 
 ## 12. Suggested Pacing (45 days)
 
-| Weeks | Focus |
-|---|---|
-| 1–2 | V1 complete; first internal demo run |
-| 3–4 | V2 items 1–3: coordinator split, critical escalation, PII stripping |
-| 5 | V2 items 5–8 if on track; otherwise consolidate and polish |
-| 6 | V3 stretch only if V1+V2 solid; otherwise demo rehearsal + pitch narrative |
+| Weeks | Focus                                                                      |
+| ----- | -------------------------------------------------------------------------- |
+| 1–2   | V1 complete; first internal demo run                                       |
+| 3–4   | V2 items 1–3: coordinator split, critical escalation, PII stripping        |
+| 5     | V2 items 5–8 if on track; otherwise consolidate and polish                 |
+| 6     | V3 stretch only if V1+V2 solid; otherwise demo rehearsal + pitch narrative |
 
 ## 13. Open Items (not yet finalized)
 

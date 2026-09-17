@@ -2,7 +2,7 @@
 
 **Phased, Safety-First Build Plan — Aligned to Core Design & Versioned Roadmap**
 
-*This revision reconciles the original project report with two governing documents: `triage-assistant-core-design.md` (the full system specification) and `triage-assistant-build-roadmap-versioned.md` (the phased V1 / V2 / V3 delivery plan). Every feature below is tagged with the stage at which it is built, and no V1 item is ever removed to make room for a later one.*
+_This revision reconciles the original project report with two governing documents: `triage-assistant-core-design.md` (the full system specification) and `triage-assistant-build-roadmap-versioned.md` (the phased V1 / V2 / V3 delivery plan). Every feature below is tagged with the stage at which it is built, and no V1 item is ever removed to make room for a later one._
 
 ---
 
@@ -35,48 +35,48 @@ The workflow has six conceptual stages, matching the core design's pipeline:
 
 ## 4. Roles by Build Stage
 
-| Role | Introduced at | Notes |
-|---|---|---|
-| Patient | V1 | Self-service intake from home. |
-| Receptionist | V1 | Assisted intake from the hospital; confirms consent on the patient's behalf (logged as staff-given). |
-| Doctor | V1 | In V1 this role also performs the coordinator's queue review and assignment — the human-assignment step is one role, not two. |
-| Triage Coordinator | V2 | Split back out from Doctor once V1 is stable; restores the two-step "AI suggests, human assigns" chain from the core design. |
-| Admin | V3 (optional) | Facility, user, and audit-log management; can stay conceptual if facility data remains static/seeded. |
+| Role               | Introduced at | Notes                                                                                                                         |
+| ------------------ | ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Patient            | V1            | Self-service intake from home.                                                                                                |
+| Receptionist       | V1            | Assisted intake from the hospital; confirms consent on the patient's behalf (logged as staff-given).                          |
+| Doctor             | V1            | In V1 this role also performs the coordinator's queue review and assignment — the human-assignment step is one role, not two. |
+| Triage Coordinator | V2            | Split back out from Doctor once V1 is stable; restores the two-step "AI suggests, human assigns" chain from the core design.  |
+| Admin              | V3 (optional) | Facility, user, and audit-log management; can stay conceptual if facility data remains static/seeded.                         |
 
 > **Deliberate V1 simplification:** The core design specifies five roles including a distinct Triage Coordinator. The roadmap folds that role into Doctor for V1 to keep the human-assignment step simple, while preserving the rule that AI never assigns a specific doctor. This is corrected in V2, not skipped.
 
 ## 5. Core Product Features, Staged
 
-| Feature | Stage | What it means |
-|---|---|---|
-| Consent capture | V1 | First step in the pipeline; nothing is processed before it. |
-| Disclaimer (pre-intake and on report) | V1 | Non-diagnostic notice shown at both points. |
-| Text intake | V1 | Baseline modality, required. |
-| Voice + image/OCR upload | V1 | Both modalities built in V1 (not staggered); patient/receptionist picks whichever fits the case, at least one required alongside text. |
-| Structured AI extraction | V1 | Chief complaint, duration, symptoms, vitals. |
-| Full deterministic risk-rules engine | V1 | Built unabridged — not simplified — because it is already fully specified. |
-| Missing-info detection via checklists | V1 | Also fully specified already; kept as-is. |
-| Case state machine (reduced) | V1 | submitted → processing → queued → assigned → closed. |
-| Risk-sorted queue view | V1 | Basic sort by risk level. |
-| Doctor review (view / edit / approve / close) | V1 | Final human decision point. |
-| Audit log (append-only, core events) | V1 | Consent, intake, AI report, assignment, closure. |
-| Basic security (env secrets, hashed passwords, upload validation) | V1 | Minimum security bar. |
-| Synthetic demo dataset (4 scenarios) | V1 | Normal, missing-info, disagreement, failure. |
-| Single facility, no multi-tenancy | V1 | Facility picker deferred. |
-| Language picker (English default) | V1 | User is asked to choose their language right after opening the app; English is the default. Translation via Indian language models (e.g. Bhashini/IndicTrans2). |
-| Coordinator role split back out | V2 | Restores two-step assignment chain. |
-| Critical-case escalation (bypass + alert) | V2 | High visual impact relative to effort. |
-| PII stripping before external API calls | V2 | Shared utility function; answers the anonymization requirement. |
-| Facility selection + multi-tenancy | V2 | facility_id scoping throughout; matters for India-wide relevance grading. |
-| Full multi-language support (Bhashini/IndicTrans2) | V2 | Across all patient-facing screens. |
-| Auto-drafted referral notes | V2 | Already lightweight in the original design. |
-| Real-time dashboard updates (Socket.IO) | V2 | Demo polish, not safety-critical — lowest V2 priority. |
-| Follow-up scheduling (maternal/chronic reminders) | V3 | Build the schedule table + a doctor "set follow-up" checkbox; simulate the reminder firing rather than running real scheduled infrastructure. |
-| Offline-first intake | V3 | Valuable to mention as architecture-ready even if unbuilt. |
-| Admin role + facility management UI | V3 | Can stay conceptual if facilities are static/seeded. |
-| Full audit-log viewer UI | V3 | V1/V2 only need the log to exist and be queryable. |
-| Consent revocation ("withdrawn") flow | V3 | The withdrawn status already exists structurally; the patient-facing action is V3 polish. |
-| Monitoring dashboard (API status, stuck-in-fallback cases) | V3 | Can be pitched as a future addition even if unbuilt. |
+| Feature                                                           | Stage | What it means                                                                                                                                                   |
+| ----------------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Consent capture                                                   | V1    | First step in the pipeline; nothing is processed before it.                                                                                                     |
+| Disclaimer (pre-intake and on report)                             | V1    | Non-diagnostic notice shown at both points.                                                                                                                     |
+| Text intake                                                       | V1    | Baseline modality, required.                                                                                                                                    |
+| Voice + image/OCR upload                                          | V1    | Both modalities built in V1 (not staggered); patient/receptionist picks whichever fits the case, at least one required alongside text.                          |
+| Structured AI extraction                                          | V1    | Chief complaint, duration, symptoms, vitals.                                                                                                                    |
+| Full deterministic risk-rules engine                              | V1    | Built unabridged — not simplified — because it is already fully specified.                                                                                      |
+| Missing-info detection via checklists                             | V1    | Also fully specified already; kept as-is.                                                                                                                       |
+| Case state machine (reduced)                                      | V1    | submitted → processing → queued → assigned → closed.                                                                                                            |
+| Risk-sorted queue view                                            | V1    | Basic sort by risk level.                                                                                                                                       |
+| Doctor review (view / edit / approve / close)                     | V1    | Final human decision point.                                                                                                                                     |
+| Audit log (append-only, core events)                              | V1    | Consent, intake, AI report, assignment, closure.                                                                                                                |
+| Basic security (env secrets, hashed passwords, upload validation) | V1    | Minimum security bar.                                                                                                                                           |
+| Synthetic demo dataset (4 scenarios)                              | V1    | Normal, missing-info, disagreement, failure.                                                                                                                    |
+| Single facility, no multi-tenancy                                 | V1    | Facility picker deferred.                                                                                                                                       |
+| Language picker (English default)                                 | V1    | User is asked to choose their language right after opening the app; English is the default. Translation via Indian language models (e.g. Bhashini/IndicTrans2). |
+| Coordinator role split back out                                   | V2    | Restores two-step assignment chain.                                                                                                                             |
+| Critical-case escalation (bypass + alert)                         | V2    | High visual impact relative to effort.                                                                                                                          |
+| PII stripping before external API calls                           | V2    | Shared utility function; answers the anonymization requirement.                                                                                                 |
+| Facility selection + multi-tenancy                                | V2    | facility_id scoping throughout; matters for India-wide relevance grading.                                                                                       |
+| Full multi-language support (Bhashini/IndicTrans2)                | V2    | Across all patient-facing screens.                                                                                                                              |
+| Auto-drafted referral notes                                       | V2    | Already lightweight in the original design.                                                                                                                     |
+| Real-time dashboard updates (Socket.IO)                           | V2    | Demo polish, not safety-critical — lowest V2 priority.                                                                                                          |
+| Follow-up scheduling (maternal/chronic reminders)                 | V3    | Build the schedule table + a doctor "set follow-up" checkbox; simulate the reminder firing rather than running real scheduled infrastructure.                   |
+| Offline-first intake                                              | V3    | Valuable to mention as architecture-ready even if unbuilt.                                                                                                      |
+| Admin role + facility management UI                               | V3    | Can stay conceptual if facilities are static/seeded.                                                                                                            |
+| Full audit-log viewer UI                                          | V3    | V1/V2 only need the log to exist and be queryable.                                                                                                              |
+| Consent revocation ("withdrawn") flow                             | V3    | The withdrawn status already exists structurally; the patient-facing action is V3 polish.                                                                       |
+| Monitoring dashboard (API status, stuck-in-fallback cases)        | V3    | Can be pitched as a future addition even if unbuilt.                                                                                                            |
 
 ## 6. End-to-End System Flow (V1 baseline)
 
@@ -101,13 +101,13 @@ The core design's additional `withdrawn` status exists structurally from V1 (the
 
 ## 8. AI / Human Division of Responsibility
 
-| AI does | Human does |
-|---|---|
-| Summarizes symptoms/reports | Makes the actual doctor assignment |
-| Applies the rules-based risk tag | Can override/edit the AI summary (versioned) |
-| Suggests a department | Can change the risk level (must state a reason) |
-| Drafts follow-up questions | Makes all clinical decisions |
-| Never assigns a specific doctor | Reviews and sends referrals |
+| AI does                          | Human does                                      |
+| -------------------------------- | ----------------------------------------------- |
+| Summarizes symptoms/reports      | Makes the actual doctor assignment              |
+| Applies the rules-based risk tag | Can override/edit the AI summary (versioned)    |
+| Suggests a department            | Can change the risk level (must state a reason) |
+| Drafts follow-up questions       | Makes all clinical decisions                    |
+| Never assigns a specific doctor  | Reviews and sends referrals                     |
 
 ## 9. Security, Privacy, and Consent
 
@@ -129,12 +129,12 @@ Voice and OCR demo variants (equivalent to the original report's Scenarios D and
 
 ## 11. Suggested Pacing (45 days)
 
-| Weeks | Focus |
-|---|---|
-| 1–2 | V1 complete; first internal demo run. |
-| 3–4 | V2 items 1–3: coordinator split, critical escalation, PII stripping. |
-| 5 | V2 items 5–8 if on track; otherwise consolidate V1/V2 and polish. |
-| 6 | V3 stretch items only if V1+V2 are fully stable; otherwise demo rehearsal, synthetic data quality, and pitch narrative. |
+| Weeks | Focus                                                                                                                   |
+| ----- | ----------------------------------------------------------------------------------------------------------------------- |
+| 1–2   | V1 complete; first internal demo run.                                                                                   |
+| 3–4   | V2 items 1–3: coordinator split, critical escalation, PII stripping.                                                    |
+| 5     | V2 items 5–8 if on track; otherwise consolidate V1/V2 and polish.                                                       |
+| 6     | V3 stretch items only if V1+V2 are fully stable; otherwise demo rehearsal, synthetic data quality, and pitch narrative. |
 
 ## 12. Definition of Done (V1 — the actual grading bar)
 

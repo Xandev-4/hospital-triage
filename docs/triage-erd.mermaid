@@ -5,14 +5,14 @@ erDiagram
         string name
         string email UK
         string password_hash
-        uuid patient_id FK "nullable, set for role=patient"
+        uuid patient_id FK "nullable, UK, set for role=patient"
         timestamp created_at
     }
 
     PATIENTS {
         uuid id PK
         string name
-        string phone_number
+        string phone_number "nullable at registration, populated during intake"
         timestamp created_at
     }
 
@@ -56,7 +56,7 @@ erDiagram
     CASE_REPORT_VERSIONS {
         uuid id PK
         uuid case_id FK
-        int version_number
+        int version_number "UK composite with case_id"
         string source "ai | doctor_edit | manual"
         jsonb content "chief_complaint, duration, symptoms, vitals, missing_info"
         uuid edited_by FK "nullable, doctor user id"

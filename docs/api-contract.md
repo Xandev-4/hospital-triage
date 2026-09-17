@@ -3,6 +3,7 @@
 Status: **frozen for V1 build**. Any change here needs a one-line note in the PR description — this doc is the thing frontend and backend both build against, not the code.
 
 Conventions used throughout:
+
 - All request/response bodies are JSON unless noted (file upload endpoint is `multipart/form-data`).
 - All authenticated endpoints require `Authorization: Bearer <jwt>`.
 - Timestamps are ISO 8601 UTC strings.
@@ -26,39 +27,44 @@ All non-2xx responses share this shape:
 }
 ```
 
-| HTTP | `error.code` | When |
-|---|---|---|
-| 400 | `validation_error` | Missing/malformed fields |
-| 401 | `unauthorized` | Missing/invalid/expired JWT |
-| 403 | `forbidden` | Valid JWT, wrong role or not the resource owner |
-| 403 | `consent_required` | No valid consent record when creating a case |
-| 404 | `not_found` | Resource doesn't exist or isn't visible to this user |
-| 409 | `invalid_state_transition` | Action not valid for the case's current `status` |
-| 500 | `internal_error` | Unhandled server error |
+| HTTP | `error.code`               | When                                                 |
+| ---- | -------------------------- | ---------------------------------------------------- |
+| 400  | `validation_error`         | Missing/malformed fields                             |
+| 401  | `unauthorized`             | Missing/invalid/expired JWT                          |
+| 403  | `forbidden`                | Valid JWT, wrong role or not the resource owner      |
+| 403  | `consent_required`         | No valid consent record when creating a case         |
+| 404  | `not_found`                | Resource doesn't exist or isn't visible to this user |
+| 409  | `invalid_state_transition` | Action not valid for the case's current `status`     |
+| 500  | `internal_error`           | Unhandled server error                               |
 
 ---
 
 ## 1. Auth
 
 ### `POST /api/auth/register`
+
 Patient self-registration only — no `role` param accepted; server always sets `role: "patient"`.
 
 **Request**
+
 ```json
 {
   "name": "string",
   "email": "string",
-  "password": "string (min 8 chars)"
+  "password": "string (min 8 chars)",
+  "phone_number": "string (optional, saved to linked patient record)"
 }
 ```
 
 **Response `201`**
+
 ```json
 {
   "user_id": "uuid",
   "role": "patient"
 }
 ```
+
 **Errors:** `400 validation_error` (weak password, malformed email), `400 validation_error` (email already registered — do not leak via 409, keep it generic per spec's "don't reveal whether email exists")
 
 ---
@@ -66,25 +72,30 @@ Patient self-registration only — no `role` param accepted; server always sets 
 ### `POST /api/auth/login`
 
 **Request**
+
 ```json
 { "email": "string", "password": "string" }
 ```
 
 **Response `200`**
+
 ```json
 {
   "token": "jwt string",
   "role": "patient | receptionist | doctor"
 }
 ```
+
 **Errors:** `401 unauthorized` — generic "invalid credentials", same message whether email exists or not.
 
 ---
 
 ### `POST /api/auth/logout`
+
 V1: client-side token discard is sufficient; endpoint exists for future blacklisting, not wired up.
 
 **Response `200`**
+
 ```json
 { "ok": true }
 ```
@@ -94,6 +105,7 @@ V1: client-side token discard is sufficient; endpoint exists for future blacklis
 ### `GET /api/auth/me`
 
 **Response `200`**
+
 ```json
 {
   "user_id": "uuid",
@@ -108,9 +120,11 @@ V1: client-side token discard is sufficient; endpoint exists for future blacklis
 ## 2. Consent
 
 ### `POST /api/consent`
+
 Patient-scoped, not case-scoped. Valid 30 minutes from `timestamp`.
 
 **Request**
+
 ```json
 {
   "patient_id": "uuid",
@@ -122,6 +136,7 @@ Patient-scoped, not case-scoped. Valid 30 minutes from `timestamp`.
 ```
 
 **Response `201`**
+
 ```json
 {
   "consent_id": "uuid",
@@ -138,9 +153,11 @@ Patient-scoped, not case-scoped. Valid 30 minutes from `timestamp`.
 ---
 
 ### `GET /api/consent/:caseId`
+
 Fetches the consent record linked to a case (via its `consent_id` FK), for audit/review — not a direct patient_id lookup, so a patient/receptionist can't fish for another patient's consent.
 
 **Response `200`**
+
 ```json
 {
   "consent_id": "uuid",
@@ -160,9 +177,11 @@ Fetches the consent record linked to a case (via its `consent_id` FK), for audit
 ## 3. Patients (receptionist-only)
 
 ### `GET /api/patients/search?q=`
+
 Logged as `patient_search` audit event.
 
 **Response `200`**
+
 ```json
 {
   "patients": [
@@ -174,17 +193,21 @@ Logged as `patient_search` audit event.
 ---
 
 ### `POST /api/patients`
+
 Creates a walk-in patient record — **not** a login account. No password/email.
 
 **Request**
+
 ```json
 { "name": "string", "phone_number": "string" }
 ```
 
 **Response `201`**
+
 ```json
 { "patient_id": "uuid", "name": "string", "phone_number": "string" }
 ```
+
 Logged as `patient_created` audit event.
 
 ---
@@ -192,21 +215,26 @@ Logged as `patient_created` audit event.
 ## 4. Intake / Case Creation
 
 ### `POST /api/cases`
+
 Validates (in order): (1) consent exists for `patient_id`, (2) `given_by` matches submission mode, (3) consent still within 30-min window. Fails closed → `403 consent_required`.
 
 **Request**
+
 ```json
 {
   "patient_id": "uuid",
   "mode": "self | assisted",
+  "phone_number": "string (optional, updates patient contact if provided during intake)",
   "chief_complaint": "string (required)",
   "duration": "string",
   "symptoms": "string"
 }
 ```
+
 (Files are attached afterward via `/upload` — not in this body.)
 
 **Response `201`**
+
 ```json
 {
   "case_id": "uuid",
@@ -215,22 +243,27 @@ Validates (in order): (1) consent exists for `patient_id`, (2) `given_by` matche
   "mode": "self | assisted"
 }
 ```
+
 Server internally fires `POST /api/cases/:id/process` after upload(s) land — not called by frontend.
 
 **Errors:**
+
 - `403 consent_required` — `{ "error": { "code": "consent_required" } }` → frontend routes back to consent screen.
 - `400 validation_error` — missing `chief_complaint`.
 
 ---
 
 ### `POST /api/cases/:id/upload`
+
 `multipart/form-data`. At least one of `voice` or `image` must be attached across calls to this endpoint before processing is considered complete; both may be used.
 
 **Request (multipart fields)**
+
 - `modality`: `"voice" | "image_ocr"`
 - `file`: binary
 
 **Response `201`**
+
 ```json
 {
   "upload_id": "uuid",
@@ -239,6 +272,7 @@ Server internally fires `POST /api/cases/:id/process` after upload(s) land — n
   "file_path": "string"
 }
 ```
+
 **Errors:** `400 validation_error` (bad file type/size — validated client- and server-side).
 
 ---
@@ -246,6 +280,7 @@ Server internally fires `POST /api/cases/:id/process` after upload(s) land — n
 ### `GET /api/cases/:id`
 
 **Response `200`**
+
 ```json
 {
   "case_id": "uuid",
@@ -261,11 +296,13 @@ Server internally fires `POST /api/cases/:id/process` after upload(s) land — n
 ---
 
 ### `GET /api/cases`
+
 Server-filtered by role: patient → own; receptionist → created-by-them; doctor → full queue-eligible set.
 
 **Query params:** `status` (optional filter)
 
 **Response `200`**
+
 ```json
 {
   "cases": [
@@ -285,11 +322,13 @@ Server-filtered by role: patient → own; receptionist → created-by-them; doct
 ## 5. AI Structuring + Rules Engine
 
 ### `POST /api/cases/:id/process`
+
 **Internal only — never exposed to any frontend role.** Block externally via internal-only middleware, not just by omitting a frontend button.
 
 Runs AI extraction + full rules engine. On success: `status: processing → queued`. On AI/OCR failure or low confidence: `status → manual_fallback` (never retried-and-hidden). Accepts internal `skip_ai: true` for rules-only re-run after manual fallback fill.
 
 **Response `200` (internal)**
+
 ```json
 {
   "case_id": "uuid",
@@ -304,6 +343,7 @@ Runs AI extraction + full rules engine. On success: `status: processing → queu
 ### `GET /api/cases/:id/report`
 
 **Response `200`**
+
 ```json
 {
   "case_id": "uuid",
@@ -325,9 +365,11 @@ Runs AI extraction + full rules engine. On success: `status: processing → queu
 ---
 
 ### `GET /api/cases/:id/report/versions`
+
 Doctor-only.
 
 **Response `200`**
+
 ```json
 {
   "versions": [
@@ -347,9 +389,11 @@ Doctor-only.
 ## 6. Manual Fallback
 
 ### `PATCH /api/cases/:id/manual-fallback`
+
 Only valid when `status = manual_fallback`.
 
 **Request**
+
 ```json
 {
   "chief_complaint": "string",
@@ -360,9 +404,11 @@ Only valid when `status = manual_fallback`.
 ```
 
 **Response `200`**
+
 ```json
 { "case_id": "uuid", "status": "queued" }
 ```
+
 **Errors:** `409 invalid_state_transition` if case isn't currently `manual_fallback`.
 
 ---
@@ -370,11 +416,13 @@ Only valid when `status = manual_fallback`.
 ## 7. Doctor Queue & Review
 
 ### `GET /api/queue`
+
 Doctor-only. Sorted by risk (critical → high → medium → low), then by `created_at`.
 
 **Query params:** `status`, `risk_level`, `sort` (optional)
 
 **Response `200`**
+
 ```json
 {
   "queue": [
@@ -393,9 +441,11 @@ Doctor-only. Sorted by risk (critical → high → medium → low), then by `cre
 ---
 
 ### `GET /api/cases/:id/review`
+
 Doctor-only. Superset of `/report` plus missing-info and disagreement flags surfaced explicitly for the review UI.
 
 **Response `200`**
+
 ```json
 {
   "case_id": "uuid",
@@ -408,9 +458,11 @@ Doctor-only. Superset of `/report` plus missing-info and disagreement flags surf
 ---
 
 ### `PATCH /api/cases/:id/edit`
+
 Doctor-only. Never overwrites — inserts a new `case_report_versions` row.
 
 **Request**
+
 ```json
 {
   "chief_complaint": "string",
@@ -421,6 +473,7 @@ Doctor-only. Never overwrites — inserts a new `case_report_versions` row.
 ```
 
 **Response `200`**
+
 ```json
 {
   "case_id": "uuid",
@@ -431,39 +484,52 @@ Doctor-only. Never overwrites — inserts a new `case_report_versions` row.
 ---
 
 ### `PATCH /api/cases/:id/risk-level`
+
 Doctor-only. `reason` is required — request is rejected without it.
 
 **Request**
+
 ```json
-{ "risk_level": "low | medium | high | critical", "reason": "string (required)" }
+{
+  "risk_level": "low | medium | high | critical",
+  "reason": "string (required)"
+}
 ```
 
 **Response `200`**
+
 ```json
 { "case_id": "uuid", "risk_level": "high" }
 ```
+
 **Errors:** `400 validation_error` — missing `reason`.
 
 ---
 
 ### `POST /api/cases/:id/approve`
+
 Doctor-only. Sets `status = assigned`.
 
 **Response `200`**
+
 ```json
 { "case_id": "uuid", "status": "assigned" }
 ```
+
 **Errors:** `409 invalid_state_transition` if case is not currently `queued`.
 
 ---
 
 ### `POST /api/cases/:id/close`
+
 Doctor-only. Sets `status = closed`.
 
 **Response `200`**
+
 ```json
 { "case_id": "uuid", "status": "closed" }
 ```
+
 **Errors:** `409 invalid_state_transition` if case is not currently `assigned`.
 
 ---
@@ -471,9 +537,11 @@ Doctor-only. Sets `status = closed`.
 ## 8. Audit Log
 
 ### `GET /api/cases/:id/audit`
+
 Query-only — no write endpoint (audit rows are written server-side as a side effect of state-changing endpoints, via a single `transitionStatus()` function for all status changes).
 
 **Response `200`**
+
 ```json
 {
   "events": [
@@ -494,9 +562,11 @@ Query-only — no write endpoint (audit rows are written server-side as a side e
 ## 9. Misc
 
 ### `GET /api/disclaimer`
+
 Optional — frontend may hardcode instead.
 
 **Response `200`**
+
 ```json
 { "text": "string" }
 ```
@@ -504,6 +574,7 @@ Optional — frontend may hardcode instead.
 ### `GET /api/health`
 
 **Response `200`**
+
 ```json
 { "status": "ok" }
 ```
@@ -512,30 +583,30 @@ Optional — frontend may hardcode instead.
 
 ## 10. Role Access Matrix
 
-| Endpoint | Patient | Receptionist | Doctor |
-|---|---|---|---|
-| `POST /api/auth/register` | ✓ (self) | — | — |
-| `POST /api/auth/login` | ✓ | ✓ | ✓ |
-| `GET /api/auth/me` | ✓ | ✓ | ✓ |
-| `POST /api/consent` | own | on behalf | — |
-| `GET /api/consent/:caseId` | own case | case they created | ✓ |
-| `GET /api/patients/search` | — | ✓ | — |
-| `POST /api/patients` | — | ✓ | — |
-| `POST /api/cases` | own | on behalf | — |
-| `POST /api/cases/:id/upload` | own case | case they created | — |
-| `GET /api/cases/:id` | own case | case they created | ✓ |
-| `GET /api/cases` | own only | own-created only | all (queue-filtered) |
-| `POST /api/cases/:id/process` | — (internal) | — (internal) | — (internal) |
-| `PATCH /api/cases/:id/manual-fallback` | own case | case they created | — |
-| `GET /api/cases/:id/report` | own case | case they created | ✓ |
-| `GET /api/cases/:id/report/versions` | — | — | ✓ |
-| `GET /api/queue` | — | — | ✓ |
-| `GET /api/cases/:id/review` | — | — | ✓ |
-| `PATCH /api/cases/:id/edit` | — | — | ✓ |
-| `PATCH /api/cases/:id/risk-level` | — | — | ✓ |
-| `POST /api/cases/:id/approve` | — | — | ✓ |
-| `POST /api/cases/:id/close` | — | — | ✓ |
-| `GET /api/cases/:id/audit` | own case | own-created case | ✓ |
+| Endpoint                               | Patient      | Receptionist      | Doctor               |
+| -------------------------------------- | ------------ | ----------------- | -------------------- |
+| `POST /api/auth/register`              | ✓ (self)     | —                 | —                    |
+| `POST /api/auth/login`                 | ✓            | ✓                 | ✓                    |
+| `GET /api/auth/me`                     | ✓            | ✓                 | ✓                    |
+| `POST /api/consent`                    | own          | on behalf         | —                    |
+| `GET /api/consent/:caseId`             | own case     | case they created | ✓                    |
+| `GET /api/patients/search`             | —            | ✓                 | —                    |
+| `POST /api/patients`                   | —            | ✓                 | —                    |
+| `POST /api/cases`                      | own          | on behalf         | —                    |
+| `POST /api/cases/:id/upload`           | own case     | case they created | —                    |
+| `GET /api/cases/:id`                   | own case     | case they created | ✓                    |
+| `GET /api/cases`                       | own only     | own-created only  | all (queue-filtered) |
+| `POST /api/cases/:id/process`          | — (internal) | — (internal)      | — (internal)         |
+| `PATCH /api/cases/:id/manual-fallback` | own case     | case they created | —                    |
+| `GET /api/cases/:id/report`            | own case     | case they created | ✓                    |
+| `GET /api/cases/:id/report/versions`   | —            | —                 | ✓                    |
+| `GET /api/queue`                       | —            | —                 | ✓                    |
+| `GET /api/cases/:id/review`            | —            | —                 | ✓                    |
+| `PATCH /api/cases/:id/edit`            | —            | —                 | ✓                    |
+| `PATCH /api/cases/:id/risk-level`      | —            | —                 | ✓                    |
+| `POST /api/cases/:id/approve`          | —            | —                 | ✓                    |
+| `POST /api/cases/:id/close`            | —            | —                 | ✓                    |
+| `GET /api/cases/:id/audit`             | own case     | own-created case  | ✓                    |
 
 Row-level ownership is enforced in addition to role checks: `case.patient_id === req.user.id` for patients, `case.created_by === req.user.id` for receptionists — not role-only middleware.
 
@@ -548,4 +619,5 @@ submitted → processing → queued → assigned → closed
                  ↓
           manual_fallback → queued
 ```
+
 `withdrawn` exists as a reserved status value from V1 but has no transition into it until the V3 consent-revocation action ships — no endpoint above should produce it yet.

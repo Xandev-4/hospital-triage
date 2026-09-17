@@ -44,8 +44,11 @@ storage/
 .cache/
 ocr-cache/
 
+# Local trash directory
+trash/
+
 # ------------------------------------------------------------------------------
-# Database & ORM (Prisma / PostgreSQL / Neon)
+# Database (PostgreSQL / Neon)
 # ------------------------------------------------------------------------------
 # Local SQLite fallbacks / DB dumps
 *.db
@@ -54,9 +57,6 @@ ocr-cache/
 *.sqlite3
 *.dump
 *.sql.gz
-
-# Prisma custom generated client (if configured outside node_modules)
-# prisma/generated/
 
 # ------------------------------------------------------------------------------
 # Logs & Process Artifacts

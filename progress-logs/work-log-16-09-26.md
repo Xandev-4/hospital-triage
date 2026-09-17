@@ -7,6 +7,7 @@ Running log of decisions and progress. Newest entries at the top.
 ## Entry — TypeScript migration, ESM build config, and .gitignore hardening
 
 **What was done:**
+
 - Configured a hardened `.gitignore` covering environment files and secrets (`.env*`, whitelisting `.env.example`), upload/media buffers (`uploads/`, `tmp/`, OCR caches), Neon/Postgres SQL dumps, test coverage, and build artifacts (`dist/`).
 - Initialized `tsconfig.json` for NodeNext ESM (`target: "ES2022"`, `module: "NodeNext"`, `moduleResolution: "NodeNext"`), `rootDir: "./src"`, `outDir: "./dist"`, strict type checking, `isolatedModules` for `tsx` runner compatibility, and safety flags (`noUncheckedIndexedAccess`, `noFallthroughCasesInSwitch`).
 - Migrated all 37 scaffolded JavaScript files (`.js`) in `src/` to TypeScript (`.ts`) across all domain modules (`auth`, `patients`, `consent`, `cases`, `processing`, `queue`, `review`, `audit`) and shared infrastructure using `git mv` to preserve git history.
@@ -17,6 +18,7 @@ Running log of decisions and progress. Newest entries at the top.
 ## Entry — Repo scaffold + auth module built
 
 **What was done:**
+
 - Created the repo skeleton using a **module structure** (not layer-based) — everything about one domain (`auth`, `patients`, `consent`, `cases`, `processing`, `queue`, `review`, `audit`) lives together in one folder under `src/modules/`, instead of being split across top-level `routes/`, `controllers/`, `models/` directories.
 - Reasoning: `processing/` is kept separate from `cases/` specifically because the AI extraction + rules engine is the riskiest, most independently-testable part of the system — isolating it means `rules-engine.js` can be unit-tested with zero HTTP/DB involved. `review/` is kept separate from `cases/` even though both touch the same table, because they're different actors (patient/receptionist vs doctor-only) — separating them makes the role boundary visible in the folder tree, not just in middleware.
 - Built shared infrastructure first, before any feature code: env loader, single Postgres connection pool, a typed `AppError` class, and a central error-handling middleware that matches the error envelope frozen in `api-contract.md` (`{ error: { code, message, details } }`).

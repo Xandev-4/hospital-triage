@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+migrations/meta/
+package-lock.json
+*.log
+.env
+.env.*
+trash/
+

@@ -13,6 +13,7 @@ Everything needed for one convincing end-to-end demo: a patient/receptionist sub
 **Roles:** Patient, Receptionist, Doctor (coordinator behavior folded into Doctor for V1 — see note below)
 
 **Included:**
+
 - Consent capture, first step in the pipeline (Section 1, 4)
 - Intake: text + at least one of voice or image/OCR upload — **both modalities built in V1**, since they're core hackathon requirements (not staggered across V1/V2)
 - AI report generation: structured extraction (chief complaint, duration, symptoms, vitals)
@@ -27,7 +28,8 @@ Everything needed for one convincing end-to-end demo: a patient/receptionist sub
 - Synthetic demo data: 3–4 sample cases (normal, missing-info, disagreement, failure — per the demo script in your teammate's report)
 
 **Deliberately simplified for V1:**
-- **Coordinator role merged into Doctor** — the doctor both sees the queue and closes cases. The *behavior* "AI never assigns a doctor" still holds (AI only suggests risk/department), but the human-assignment step is a single role instead of two. Splitting it out is V2.
+
+- **Coordinator role merged into Doctor** — the doctor both sees the queue and closes cases. The _behavior_ "AI never assigns a doctor" still holds (AI only suggests risk/department), but the human-assignment step is a single role instead of two. Splitting it out is V2.
 - Single facility only — no facility picker, no multi-tenancy (Section 21, 22)
 - Language picker shown right after opening the app; English is the default. Translation via Indian language models (Bhashini/IndicTrans2) from V1 — not deferred to V2.
 - Manual fallback exists but is simple (Section 12) — no confidence scoring nuance yet
@@ -41,6 +43,7 @@ Everything needed for one convincing end-to-end demo: a patient/receptionist sub
 Add these once V1 is fully working and demoed successfully at least once internally. This is where you recover the scope your teammate's simplified report cut, but selectively — prioritizing what actually affects grading over what's just "more features."
 
 **Included, roughly in priority order:**
+
 1. **Split Coordinator role back out from Doctor** (Section 2, 11) — restores the full "AI suggests, human assigns" chain as two distinct roles/steps. Mostly a role + one assignment endpoint, not a large lift.
 2. **Critical-case escalation** (Section 6) — bypass + visual/audio alert for CRITICAL cases. High visual impact for the demo relative to the effort.
 3. **PII stripping before external API calls** (Section 18) — one shared utility function; cheap, and directly answers the "anonymization" requirement in the guidelines.
@@ -53,9 +56,10 @@ Add these once V1 is fully working and demoed successfully at least once interna
 
 ## V3 — Stretch Goals (only if V1 and V2 are solid with time to spare)
 
-These are the parts that add genuine scope/complexity, or are more valuable to *mention in the pitch* than to fully build. Don't start V3 until V2 is stable — a half-built V3 feature actively hurts more than an unstarted one.
+These are the parts that add genuine scope/complexity, or are more valuable to _mention in the pitch_ than to fully build. Don't start V3 until V2 is stable — a half-built V3 feature actively hurts more than an unstarted one.
 
 **Included:**
+
 1. **Follow-up scheduling** (Section 29) — maternal-health/chronic-disease reminders. Recommend building only the schedule table + doctor's "set follow-up" checkbox, and **simulating** the reminder firing live rather than running real scheduled infrastructure (as already planned).
 2. **Offline-first intake** (queue locally, sync later) — valuable to mention as architecture-ready even if not fully implemented.
 3. **Admin role + facility management UI** — if facilities are still seeded/static data, this can stay conceptual.
@@ -68,6 +72,7 @@ These are the parts that add genuine scope/complexity, or are more valuable to *
 ## What never gets cut, at any stage
 
 Regardless of how far you get through V2/V3, these are non-negotiable because they're either explicit guideline requirements or core to the "safety-first" grading criterion:
+
 - Consent captured before any processing
 - A human always makes the final case decision — AI never assigns a doctor or diagnoses
 - Every important action is logged in the audit trail
@@ -78,11 +83,11 @@ Regardless of how far you get through V2/V3, these are non-negotiable because th
 
 ## Suggested pacing across 45 days
 
-| Weeks | Focus |
-|---|---|
-| 1–2 | V1 complete, first internal demo run |
-| 3–4 | V2 items 1–3 (coordinator split, critical escalation, PII stripping) |
-| 5 | V2 items 5–8 if on track, otherwise consolidate V1/V2 and polish |
-| 6 | V3 stretch items only if V1+V2 are fully stable; otherwise spend this week on demo rehearsal, synthetic data quality, and pitch narrative |
+| Weeks | Focus                                                                                                                                     |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 1–2   | V1 complete, first internal demo run                                                                                                      |
+| 3–4   | V2 items 1–3 (coordinator split, critical escalation, PII stripping)                                                                      |
+| 5     | V2 items 5–8 if on track, otherwise consolidate V1/V2 and polish                                                                          |
+| 6     | V3 stretch items only if V1+V2 are fully stable; otherwise spend this week on demo rehearsal, synthetic data quality, and pitch narrative |
 
 Slides/pitch should describe the full design (including unbuilt V3 items) as **"architecture-ready, not built for this demo due to time"** — this is a legitimate and expected framing for a hackathon submission, not a weakness to hide.
