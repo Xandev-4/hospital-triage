@@ -1,0 +1,49 @@
+import type { NextFunction, Request, Response } from "express";
+import { AppError } from "../utils/AppError.js";
+
+export function errorHandler(
+  err: unknown,
+  req: Request,
+  res: Response,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  next: NextFunction
+): void {
+  // 1. Handled domain/operational AppError
+  if (err instanceof AppError) {
+    res.status(err.statusCode).json({
+      error: { code: err.code, message: err.message, details: err.details },
+    });
+    return;
+  }
+
+  // 2. Client JSON syntax error (from express.json parser)
+  if (
+    err instanceof SyntaxError &&
+    "status" in err &&
+    err.status === 400 &&
+    "body" in err
+  ) {
+    res.status(400).json({
+      error: {
+        code: "validation_error",
+        message: "Malformed JSON in request body",
+        details: {},
+      },
+    });
+    return;
+  }
+
+  // 3. Unhandled runtime error or bug (log context server-side, mask internal details to client)
+  console.error(
+    `[Unhandled Error] ${req.method} ${req.originalUrl}:`,
+    err instanceof Error ? err.stack || err.message : err
+  );
+
+  res.status(500).json({
+    error: {
+      code: "internal_error",
+      message: "Something went wrong",
+      details: {},
+    },
+  });
+}

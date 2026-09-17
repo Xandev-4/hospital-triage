@@ -4,6 +4,17 @@ Running log of decisions and progress. Newest entries at the top.
 
 ---
 
+## Entry — Centralized AppError and Express error handling middleware
+
+**What was done:**
+
+- Implemented `AppError` in `src/shared/utils/AppError.ts` as a strongly typed domain error class matching the frozen error envelope from `api-contract.md` (`{ error: { code, message, details } }`).
+- Built static factory methods (`validation`, `unauthorized`, `forbidden`, `consentRequired`, `notFound`, `invalidStateTransition`, `internal`) ensuring correct HTTP status codes and strict `ErrorCode` enforcement.
+- Implemented `errorHandler` in `src/shared/middleware/error-handler.ts` catching operational `AppError`s, handling client JSON `SyntaxError`s with 400 validation responses, and safely logging and masking unexpected 500 errors.
+- Registered `errorHandler` in `src/app.ts` as the terminal error middleware and verified end-to-end behavior via a live HTTP 404 test request.
+
+---
+
 ## Entry — Fail-fast typed environment configuration
 
 **What was done:**
