@@ -4,6 +4,17 @@ Running log of decisions and progress. Newest entries at the top.
 
 ---
 
+## Entry — Express app skeleton and health check verification
+
+**What was done:**
+
+- Configured `src/app.ts` with global JSON middleware, the baseline `GET /api/health` endpoint returning `{"status": "ok"}` matching `docs/api-contract.md`, and clean routing anchors for subsequent modules.
+- Built `src/server.ts` to bootstrap the HTTP server using port and environment configuration from `src/shared/config/env.ts`.
+- Added the `"dev": "tsx watch src/server.ts"` command to `package.json`.
+- Started the server via `npm run dev` and verified end-to-end connectivity with curl, confirming HTTP 200 `{"status": "ok"}`.
+
+---
+
 ## Entry — Centralized AppError and Express error handling middleware
 
 **What was done:**
