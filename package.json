@@ -8,7 +8,7 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tsx tests/run-all.ts",
     "dev": "tsx watch src/server.ts",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",

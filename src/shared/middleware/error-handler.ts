@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../utils/AppError.js";
+import { env } from "../config/env.js";
 
 export function errorHandler(
   err: unknown,
@@ -10,6 +11,13 @@ export function errorHandler(
 ): void {
   // 1. Handled domain/operational AppError
   if (err instanceof AppError) {
+    if (env.nodeEnv !== "production") {
+      console.error(
+        `[AppError] ${req.method} ${req.originalUrl} -> ${err.statusCode} ${err.code}: ${err.message}`,
+        Object.keys(err.details).length > 0 ? err.details : ""
+      );
+    }
+
     res.status(err.statusCode).json({
       error: { code: err.code, message: err.message, details: err.details },
     });
