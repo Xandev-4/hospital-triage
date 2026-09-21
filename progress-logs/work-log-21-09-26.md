@@ -136,9 +136,52 @@ Executed full HTTP integration loop against live server on port 8000:
 
 ---
 
-## 5. Test Suite Summary
+## 5. Doctor Triage Queue Service (`src/modules/queue/`)
 
-All 8 backend test suites pass 100% cleanly via `npm test` in 58.74s:
+### Architecture & Contract Compliance
+
+`GET /api/queue` represents the central operational dashboard for triage clinicians and physicians. It is designed to be a high-density, rapidly scannable list prioritizing clinical urgency.
+
+### Key Implementation Decisions
+
+- **Doctor-Only Role Guard**: In accordance with `docs/api-contract.md §7 & §10`, access is restricted strictly to doctors (`actor.role === "doctor"`). Requests from patients or receptionists are rejected with `403 forbidden`.
+- **Active Queue Status Scoping (`status IN ('queued', 'assigned')`)**:
+  - `queued`: Newly processed cases awaiting physician acceptance.
+  - `assigned`: Cases currently accepted and actively under clinical review by a physician.
+  - Excludes `submitted`, `processing`, and `manual_fallback` (not ready for queue review) as well as `closed` (completed triage).
+- **Non-Alphabetical Clinical Priority Ordering**:
+  - Implemented custom SQL CASE ordering: `critical (1) -> high (2) -> medium (3) -> low (4) -> null (5)`.
+  - Secondary sort: `created_at ASC` (FIFO tie-breaking ensures patients in the same risk tier are attended to in arrival order).
+- **Zero Clinical Data Leakage (Scannable Projection)**:
+  - Explicitly projects ONLY contract-specified summary fields: `case_id`, `patient_display`, `chief_complaint`, `risk_level`, `submitted_at`, and `status`.
+  - Joins `patients` table to display patient names without leaking sensitive clinical narratives.
+  - Free-text `chief_complaint` is safely truncated to 100 characters with ellipsis. Detailed symptoms, vitals, durations, and internal IDs are strictly excluded from the list view.
+- **Filter Support**: Supports optional query filtering by `status` (`queued` vs `assigned`) and `risk_level` (`critical`, `high`, `medium`, `low`).
+
+### Controller & Routes (`queue.controller.ts`, `queue.routes.ts`)
+
+- **Route Registration**: Mounted `GET /api/queue` on Express router with `requireAuth` and `requireRole("doctor")`.
+- **Architectural Policy & Single Facility V1**:
+  - Annotated route with explicit documentation: `// no ownership filter: all doctors share the full queue, single-facility V1`.
+  - Contrasting with the row-level ownership enforced in other modules, queue review deliberately allows all doctors in the facility to view and action all active triage cases.
+- **Controller Logic**: Safely maps and validates query parameters (`status`, `risk_level`, `sort`) and dispatches to `queueService.getQueue(req.user, filters)`.
+
+### Verification (`tests/modules/queue/queue.service.test.ts`, `tests/modules/queue/queue.routes.test.ts`)
+
+- Automated tests covering:
+  1. Role guard: non-doctor actors rejected with `403 forbidden`.
+  2. Active status scoping: only `queued` and `assigned` cases returned; all other statuses excluded.
+  3. Non-alphabetical risk sorting: verified `critical` -> `high` -> `medium` -> `low`.
+  4. FIFO tie-breaking: earlier created critical cases precede later ones.
+  5. Projection safety: verified absence of detailed symptoms/vitals and confirmed complaint truncation.
+  6. Filter parameters: status and risk level filtering validated along with 400 rejection on illegal values.
+  7. HTTP Route integration: verified 401 unauthenticated, 403 patient rejection, 200 doctor success, cross-doctor shared visibility, and HTTP query filtering.
+
+---
+
+## 6. Test Suite Summary
+
+All 10 backend test suites pass 100% cleanly via `npm test`:
 
 1. `cases-state-machine.test.ts` (Domain transition rules)
 2. `rules-engine.test.ts` (Deterministic clinical rules engine)
@@ -148,3 +191,5 @@ All 8 backend test suites pass 100% cleanly via `npm test` in 58.74s:
 6. `consent.test.ts` (Consent window, mode symmetry, anti-tampering)
 7. `cases.test.ts` (Intake, row ownership, blocked external routes)
 8. `pipeline-full-loop.test.ts` (E2E HTTP loop, critical trigger, disagreement, fallback)
+9. `queue.service.test.ts` (Doctor role guard, risk prioritization, FIFO, projection safety)
+10. `queue.routes.test.ts` (HTTP endpoint, role gating, shared queue access without per-doctor filter)

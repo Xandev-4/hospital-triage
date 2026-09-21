@@ -1,7 +1,7 @@
 /**
  * AI & Multimodal Structured Extraction Wrapper
  *
- * Implements Step 25 and Section 8 of docs/triage-assistant-core-design.md:
+ * Implements Section 8 of docs/triage-assistant-core-design.md:
  * - Pure extraction wrapper isolated from database and HTTP controllers.
  * - Extracts structured fields: chiefComplaint, duration, symptoms, vitals, missingInfo, confidence.
  * - Enforces real timeout to prevent hanging requests.

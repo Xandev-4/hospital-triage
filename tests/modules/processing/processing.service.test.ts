@@ -13,7 +13,7 @@ import { processCase } from "../../../src/modules/processing/processing.service.
 
 export async function runProcessingServiceTests() {
   console.log("\n=======================================================");
-  console.log("   TEST SUITE: Processing Orchestrator (Step 26)       ");
+  console.log("   TEST SUITE: Processing Orchestrator                 ");
   console.log("=======================================================");
 
   // 1. Setup test patient, user, and consent
@@ -326,7 +326,7 @@ export async function runProcessingServiceTests() {
     );
   }
 
-  console.log("\n✓ ALL Step 26 Processing Service tests passed!");
+  console.log("\n✓ ALL Processing Service tests passed!");
 }
 
 if (

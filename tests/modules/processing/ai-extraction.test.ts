@@ -6,7 +6,7 @@ import {
 
 export async function runAiExtractionTests() {
   console.log("\n=======================================================");
-  console.log("   TEST SUITE: AI Extraction Module (Step 25)          ");
+  console.log("   TEST SUITE: AI Extraction Module                   ");
   console.log("=======================================================");
 
   // 1. Happy path: valid structured extraction
@@ -157,7 +157,7 @@ export async function runAiExtractionTests() {
     );
   }
 
-  console.log("\n✓ ALL Step 25 AI Extraction unit tests passed!");
+  console.log("\n✓ ALL AI Extraction unit tests passed!");
 }
 
 if (

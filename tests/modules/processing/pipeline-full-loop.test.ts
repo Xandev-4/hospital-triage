@@ -7,7 +7,7 @@ const BASE_URL = process.env.TEST_API_URL || "http://localhost:8000";
 
 export async function runPipelineFullLoopTests() {
   console.log("\n=======================================================");
-  console.log("  TEST SUITE: Full Pipeline E2E Loop (Step 28)         ");
+  console.log("  TEST SUITE: Full Pipeline E2E Loop                   ");
   console.log("=======================================================");
 
   // 1. Register a fresh isolated test patient
@@ -273,9 +273,7 @@ export async function runPipelineFullLoopTests() {
     );
   }
 
-  console.log(
-    "\n✓ ALL Step 28 Full Pipeline Loop E2E tests passed successfully!"
-  );
+  console.log("\n✓ ALL Full Pipeline Loop E2E tests passed successfully!");
 }
 
 if (

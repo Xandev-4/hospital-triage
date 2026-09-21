@@ -6,6 +6,8 @@ import { runAuthTests } from "./modules/auth/auth.test.js";
 import { runConsentTests } from "./modules/consent/consent.test.js";
 import { runCasesTests } from "./modules/cases/cases.test.js";
 import { runPipelineFullLoopTests } from "./modules/processing/pipeline-full-loop.test.js";
+import { runQueueServiceTests } from "./modules/queue/queue.service.test.js";
+import { runQueueRoutesTests } from "./modules/queue/queue.routes.test.js";
 
 async function main() {
   console.log(
@@ -42,8 +44,14 @@ async function main() {
     // 7. Cases intake, row-level ownership, & mode symmetry
     await runCasesTests();
 
-    // 8. Step 28 Full Pipeline E2E Loop
+    // 8. Full Pipeline E2E Loop
     await runPipelineFullLoopTests();
+
+    // 9. Doctor Queue Service
+    await runQueueServiceTests();
+
+    // 10. Doctor Queue HTTP Routes & Role Guarding
+    await runQueueRoutesTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

@@ -54,7 +54,7 @@ async function getNextVersionNumber(caseId: string): Promise<number> {
 /**
  * Orchestrator Service for AI Extraction + Rules-Based Risk Evaluation.
  *
- * Implements Step 26 and Section 5 of docs/api-contract.md:
+ * Implements Section 5 of docs/api-contract.md:
  * - Order of operations:
  *   1. Assert legal transition to 'processing' and persist.
  *   2. Run extractStructuredData (or skip if skip_ai: true).

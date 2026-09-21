@@ -3,7 +3,7 @@ import { evaluateRisk } from "../../../src/modules/processing/rules-engine.js";
 
 export async function runRulesEngineTests() {
   console.log("\n=======================================================");
-  console.log("   TEST SUITE: Pure Deterministic Rules Engine (Step 24)");
+  console.log("   TEST SUITE: Pure Deterministic Rules Engine         ");
   console.log("=======================================================");
 
   // 1. CRITICAL Rules
@@ -384,7 +384,7 @@ export async function runRulesEngineTests() {
     );
   }
 
-  console.log("\n✓ ALL Step 24 Rules Engine unit tests passed!");
+  console.log("\n✓ ALL Rules Engine unit tests passed!");
 }
 
 if (
