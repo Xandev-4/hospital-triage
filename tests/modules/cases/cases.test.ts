@@ -92,14 +92,14 @@ export async function runCasesTests() {
   const createData = await createRes.json();
   if (
     createRes.status !== 201 ||
-    createData.status !== "submitted" ||
+    !["submitted", "queued"].includes(createData.status) ||
     createData.mode !== "self"
   ) {
     throw new Error(`Case creation failed: ${JSON.stringify(createData)}`);
   }
   const caseId = createData.case_id;
   console.log(
-    "✓ Case created successfully: status=submitted, mode=self, case_id:",
+    `✓ Case created successfully: status=${createData.status}, mode=self, case_id:`,
     caseId
   );
 
@@ -255,7 +255,27 @@ export async function runCasesTests() {
   if (listRes.status !== 200 || !Array.isArray(listData.cases)) {
     throw new Error("Failed to list cases");
   }
-  console.log("✓ List cases returned array, count:", listData.cases.length);
+  // 9. Blocked Route: POST /api/cases/:id/process is internal-only (must return 404 from external HTTP)
+  console.log(
+    "\n[Cases 9] Blocked Route: POST /api/cases/:id/process is internal-only"
+  );
+  const processHttpRes = await fetch(
+    `${BASE_URL}/api/cases/${caseId}/process`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${tokenP1}`,
+      },
+      body: JSON.stringify({}),
+    }
+  );
+  if (processHttpRes.status !== 404) {
+    throw new Error(
+      `Security failure! /process should never be exposed via HTTP. Expected 404, got ${processHttpRes.status}`
+    );
+  }
+  console.log("✓ External HTTP call to /process blocked (returned 404)");
 
   console.log("\n>> All Cases test assertions passed!");
 }

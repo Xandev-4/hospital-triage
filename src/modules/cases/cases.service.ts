@@ -1,10 +1,18 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../shared/config/db.js";
-import { patients, triageCases, users } from "../../shared/config/schema.js";
+import {
+  caseReportVersions,
+  patients,
+  triageCases,
+  users,
+} from "../../shared/config/schema.js";
 import { AppError } from "../../shared/utils/AppError.js";
 import { checkValidConsent } from "../consent/consent.service.js";
+import { logAuditEvent } from "../audit/audit-logger.js";
+import { processCase } from "../processing/processing.service.js";
 import type { CaseStatus } from "./cases.state-machine.js";
 import type { UserRole } from "../../shared/types/express.d.js";
+import type { RiskLevel } from "../processing/rules-engine.js";
 
 const MAX_CHIEF_COMPLAINT_LENGTH = 1000;
 const MAX_SYMPTOMS_LENGTH = 5000;
@@ -22,6 +30,13 @@ export interface CreateCaseInput {
   chief_complaint: string;
   duration?: string;
   symptoms?: string;
+  vitals?: Record<string, unknown>;
+  // Test simulation hooks for end-to-end testing
+  simulate_low_confidence?: boolean;
+  simulate_failure?: boolean;
+  simulate_timeout?: boolean;
+  simulate_malformed_output?: boolean;
+  ai_suggested_risk?: RiskLevel;
 }
 
 export interface ListCasesFilters {
@@ -120,6 +135,7 @@ export async function createCase(input: CreateCaseInput, actor: CaseActor) {
       chiefComplaint: chiefComplaint,
       duration: duration,
       symptoms: symptoms,
+      vitals: input.vitals ?? null,
     })
     .returning();
 
@@ -127,9 +143,43 @@ export async function createCase(input: CreateCaseInput, actor: CaseActor) {
     throw AppError.internal("Failed to create triage case");
   }
 
+  // 3. Log intake_submitted audit event (Rule #3: append-only audit trail)
+  await logAuditEvent({
+    caseId: createdCase.id,
+    actorId: actor.id,
+    eventType: "intake_submitted",
+    metadata: {
+      mode,
+      patient_id: resolvedPatientId,
+    },
+  });
+
+  // 4. Trigger internal-only processing pipeline directly
+  // NOTE: Per api-contract.md §5, /process is internal-only and NEVER exposed via an Express route.
+  // We invoke processCase directly as a plain service function right after case creation.
+  let finalStatus: CaseStatus = createdCase.status;
+  try {
+    const processResult = await processCase(createdCase.id, actor, {
+      simulateFailure: input.simulate_failure,
+      simulateLowConfidence: input.simulate_low_confidence,
+      simulateTimeout: input.simulate_timeout,
+      simulateMalformedOutput: input.simulate_malformed_output,
+      aiSuggestedRisk: input.ai_suggested_risk,
+    });
+    finalStatus = processResult.status;
+  } catch (err) {
+    // Fail-safe: even if unexpected processing error occurs, never leak internals or crash intake
+    console.error(
+      `[Cases Service] Internal processing exception for case ${createdCase.id}:`,
+      err
+    );
+  }
+
+  // 5. Return minimal safe response per api-contract.md §4
+  // Never expose internal AI provider errors, stack traces, or raw model output to the client.
   return {
     case_id: createdCase.id,
-    status: createdCase.status,
+    status: finalStatus,
     consent_id: createdCase.consentId,
     mode: createdCase.mode,
   };
@@ -240,5 +290,110 @@ export async function listCases(actor: CaseActor, filters?: ListCasesFilters) {
       risk_level: row.riskLevel,
       created_at: row.createdAt.toISOString(),
     })),
+  };
+}
+
+/**
+ * Retrieves the latest clinical report for a case.
+ * Enforces row-level ownership and returns anti-enumeration 404 if unauthorized.
+ */
+export async function getCaseReport(id: string, actor: CaseActor) {
+  const [caseRecord] = await db
+    .select()
+    .from(triageCases)
+    .where(eq(triageCases.id, id));
+
+  if (!caseRecord) {
+    throw AppError.notFound("Case not found");
+  }
+
+  // Row-level ownership check (anti-enumeration: return 404 if not authorized)
+  if (actor.role === "doctor") {
+    // Doctors have access to all cases
+  } else if (actor.role === "receptionist") {
+    if (caseRecord.createdBy !== actor.id) {
+      throw AppError.notFound("Case not found");
+    }
+  } else if (actor.role === "patient") {
+    const [userRecord] = await db
+      .select({ patientId: users.patientId })
+      .from(users)
+      .where(eq(users.id, actor.id));
+
+    if (!userRecord || userRecord.patientId !== caseRecord.patientId) {
+      throw AppError.notFound("Case not found");
+    }
+  } else {
+    throw AppError.forbidden();
+  }
+
+  // Fetch latest version from case_report_versions
+  const [latestReport] = await db
+    .select()
+    .from(caseReportVersions)
+    .where(eq(caseReportVersions.caseId, id))
+    .orderBy(desc(caseReportVersions.versionNumber))
+    .limit(1);
+
+  if (latestReport) {
+    const content = latestReport.content as any;
+    return {
+      case_id: caseRecord.id,
+      status: caseRecord.status,
+      chief_complaint: content.chief_complaint ?? {
+        value: caseRecord.chiefComplaint ?? "",
+        source: latestReport.source,
+      },
+      duration: content.duration ?? {
+        value: caseRecord.duration ?? "",
+        source: latestReport.source,
+      },
+      symptoms: content.symptoms ?? {
+        value: caseRecord.symptoms ?? "",
+        source: latestReport.source,
+      },
+      vitals: content.vitals ?? {
+        value: caseRecord.vitals ?? {},
+        source: latestReport.source,
+      },
+      missing_info: content.missing_info ?? [],
+      risk_level: content.risk_level ?? caseRecord.riskLevel,
+      ai_rules_disagreement: content.ai_rules_disagreement ?? {
+        present: caseRecord.aiRulesDisagreement,
+        ai_suggested: null,
+        rules_result: caseRecord.riskLevel,
+        note: null,
+      },
+    };
+  }
+
+  // Fallback if no version exists yet (e.g. submitted or failed)
+  return {
+    case_id: caseRecord.id,
+    status: caseRecord.status,
+    chief_complaint: {
+      value: caseRecord.chiefComplaint ?? "",
+      source: "manual",
+    },
+    duration: {
+      value: caseRecord.duration ?? "",
+      source: "manual",
+    },
+    symptoms: {
+      value: caseRecord.symptoms ?? "",
+      source: "manual",
+    },
+    vitals: {
+      value: caseRecord.vitals ?? {},
+      source: "manual",
+    },
+    missing_info: [],
+    risk_level: caseRecord.riskLevel ?? null,
+    ai_rules_disagreement: {
+      present: caseRecord.aiRulesDisagreement,
+      ai_suggested: null,
+      rules_result: caseRecord.riskLevel,
+      note: null,
+    },
   };
 }

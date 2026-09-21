@@ -18,3 +18,9 @@ export async function listCases(req: Request, res: Response) {
   const result = await casesService.listCases(req.user!, { status });
   res.status(200).json(result);
 }
+
+export async function getCaseReport(req: Request, res: Response) {
+  const caseId = req.params.id as string;
+  const result = await casesService.getCaseReport(caseId, req.user!);
+  res.status(200).json(result);
+}

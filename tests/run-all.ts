@@ -1,7 +1,11 @@
 import { runCasesStateMachineTests } from "./modules/cases/cases-state-machine.test.js";
+import { runRulesEngineTests } from "./modules/processing/rules-engine.test.js";
+import { runAiExtractionTests } from "./modules/processing/ai-extraction.test.js";
+import { runProcessingServiceTests } from "./modules/processing/processing.service.test.js";
 import { runAuthTests } from "./modules/auth/auth.test.js";
 import { runConsentTests } from "./modules/consent/consent.test.js";
 import { runCasesTests } from "./modules/cases/cases.test.js";
+import { runPipelineFullLoopTests } from "./modules/processing/pipeline-full-loop.test.js";
 
 async function main() {
   console.log(
@@ -20,14 +24,26 @@ async function main() {
     // 1. Pure domain state machine logic
     await runCasesStateMachineTests();
 
-    // 2. Auth module & anti-enumeration
+    // 2. Pure deterministic rules engine
+    await runRulesEngineTests();
+
+    // 3. AI extraction & validation guard
+    await runAiExtractionTests();
+
+    // 4. Processing Orchestrator & Rules-wins safety invariant
+    await runProcessingServiceTests();
+
+    // 5. Auth module & anti-enumeration
     await runAuthTests();
 
-    // 3. Consent module & 30m window verification
+    // 6. Consent module & 30m window verification
     await runConsentTests();
 
-    // 4. Cases intake, row-level ownership, & mode symmetry
+    // 7. Cases intake, row-level ownership, & mode symmetry
     await runCasesTests();
+
+    // 8. Step 28 Full Pipeline E2E Loop
+    await runPipelineFullLoopTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

@@ -17,3 +17,6 @@ casesRoutes.get("/", requireAuth, controller.listCases);
 
 // GET /api/cases/:id — single case lookup (row-level ownership enforced in service)
 casesRoutes.get("/:id", requireAuth, controller.getCaseById);
+
+// GET /api/cases/:id/report — clinical report retrieval (row-level ownership enforced in service)
+casesRoutes.get("/:id/report", requireAuth, controller.getCaseReport);
