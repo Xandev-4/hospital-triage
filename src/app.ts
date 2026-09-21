@@ -1,5 +1,6 @@
 import express from "express";
 import { authRoutes } from "./modules/auth/auth.routes.js";
+import { consentRoutes } from "./modules/consent/consent.routes.js";
 import { errorHandler } from "./shared/middleware/error-handler.js";
 
 export const app = express();
@@ -14,8 +15,8 @@ app.get("/api/health", (_req, res) => {
 
 // Feature Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/consent", consentRoutes);
 // app.use("/api/patients", patientsRoutes);
-// app.use("/api/consent", consentRoutes);
 // app.use("/api/cases", casesRoutes);
 // app.use("/api/queue", queueRoutes);
 // app.use("/api/review", reviewRoutes);
