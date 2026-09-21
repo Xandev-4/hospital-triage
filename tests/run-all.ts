@@ -8,6 +8,8 @@ import { runCasesTests } from "./modules/cases/cases.test.js";
 import { runPipelineFullLoopTests } from "./modules/processing/pipeline-full-loop.test.js";
 import { runQueueServiceTests } from "./modules/queue/queue.service.test.js";
 import { runQueueRoutesTests } from "./modules/queue/queue.routes.test.js";
+import { runReviewServiceTests } from "./modules/review/review.service.test.js";
+import { runReviewFullLoopTests } from "./modules/review/review-full-loop.test.js";
 
 async function main() {
   console.log(
@@ -52,6 +54,12 @@ async function main() {
 
     // 10. Doctor Queue HTTP Routes & Role Guarding
     await runQueueRoutesTests();
+
+    // 11. Clinical Review Service Operations & Transitions
+    await runReviewServiceTests();
+
+    // 12. Full Vertical Slice End-to-End Loop
+    await runReviewFullLoopTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

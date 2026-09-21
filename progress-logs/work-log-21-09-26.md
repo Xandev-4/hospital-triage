@@ -179,9 +179,71 @@ Executed full HTTP integration loop against live server on port 8000:
 
 ---
 
-## 6. Test Suite Summary
+## 6. Clinical Review Domain Service (`src/modules/review/review.service.ts`)
 
-All 10 backend test suites pass 100% cleanly via `npm test`:
+### Architecture & Clinical Safety Invariants
+
+The clinical review service provides the primary decision-support interface where physicians review, refine, override, and disposition triage cases.
+
+### Core Operations Built
+
+1. **`getCaseForReview(caseId, actor)`**:
+   - Gated strictly for doctors (`actor.role === "doctor"`); rejects non-doctor roles with `403 forbidden`.
+   - Projects a full superset of the `/report` endpoint: full clinical report, missing-info checklist, and the `ai_rules_disagreement` banner.
+   - Enforces the single-facility V1 policy: all doctors share visibility over all facility cases without artificial row-level ownership blocking.
+2. **`editReport(caseId, content, doctor)`**:
+   - **Non-destructive versioning**: Never overwrites existing report records. Queries the current `max(version_number)` and inserts a new `case_report_versions` row with incremented version number, `source: "doctor_edit"`, and `edited_by: doctor.id`.
+   - **Transaction & Concurrency Guard**: Wraps the version lookup and insert in an atomic database transaction. Intercepts unique constraint violations (`case_version_unique` / error code `23505`) and converts them into clean, client-actionable `409 conflict` errors (`"This report was just edited by someone else, please refresh and retry."`) rather than letting unhandled raw DB crashes escape.
+   - **Summary Sync**: Updates top-level case summary columns (`chief_complaint`, `duration`, `symptoms`, `vitals`) on `triage_cases` to maintain alignment.
+   - **Audit Trail**: Appends a `report_edited` audit log attributing the changes and modified field list to the specific doctor.
+3. **`overrideRiskLevel(caseId, newLevel, reason, doctor)`**:
+   - Requires explicit justification: validates that `reason` is present, trimmed of whitespace, and between 3 and 1000 characters. Rejects empty or whitespace-only overrides with `400 validation_error`.
+   - Validates `newLevel` against legal risk tiers (`low`, `medium`, `high`, `critical`).
+   - Updates `triage_cases.risk_level` and syncs the latest report version content.
+   - **Audit Trail**: Appends a `risk_overridden` audit event recording previous risk, new risk, reason text, and doctor attribution.
+4. **`approveCase(caseId, doctor)`**:
+   - Represents the physician taking active ownership of a case.
+   - Validates the transition through the domain state machine (`assertValidTransition(status, 'assigned')`).
+   - Allowed only from `queued`; any other status fails with a clean `409 invalid_state_transition` carrying `{ from, to, allowedTransitions }`.
+   - Updates status to `assigned` and writes an `assigned` audit event.
+5. **`closeCase(caseId, doctor)`**:
+   - Represents the final triage disposition.
+   - Validates the transition through the domain state machine (`assertValidTransition(status, 'closed')`).
+   - Allowed only from `assigned`; attempting to close a case directly from `queued` (bypassing approval) is blocked with `409 invalid_state_transition`.
+   - Updates status to `closed` (terminal state) and writes a `closed` audit event.
+
+### Controller & Routes (`review.controller.ts`, `review.routes.ts`)
+
+- **Endpoints Mounted under `/api/cases`**:
+  - `GET /api/cases/:id/review` — Doctor-only review superset retrieval.
+  - `PATCH /api/cases/:id/edit` — Append-only report version creation (`source: "doctor_edit"`).
+  - `PATCH /api/cases/:id/risk-level` — Physician risk level override with required justification.
+  - `POST /api/cases/:id/approve` — Physician assignment (`queued -> assigned`).
+  - `POST /api/cases/:id/close` — Case closure (`assigned -> closed`).
+- **Defense in Depth**: Explicit route-level guards (`[requireAuth, requireRole("doctor")]`) prevent shadowing or leakage of internal sub-paths (e.g. unrouted `/process` correctly falls through to 404).
+
+### Verification (`tests/modules/review/review.service.test.ts`, `tests/modules/review/review-full-loop.test.ts`)
+
+- Automated service unit tests verifying role gating, report superset, shared access, version 2 creation, whitespace-only reason rejection, transition enforcement, and audit logs.
+- **Full End-to-End Vertical Slice**:
+  1. Patient registration (`POST /api/auth/register`) & login (`POST /api/auth/login`).
+  2. Active consent creation (`POST /api/consent`).
+  3. Case creation (`POST /api/cases`) auto-processing case into `status: "queued"`.
+  4. Case appears in active doctor queue (`GET /api/queue`) with correct priority (`critical`).
+  5. Doctor reviews case (`GET /api/cases/:id/review`) receiving full clinical superset.
+  6. Override validation: empty and whitespace-only reasons rejected with `400 validation_error`; valid override applied.
+  7. Doctor edits report (`PATCH /api/cases/:id/edit`) inserting version 2 (`doctor_edit`).
+  8. State machine guard: attempting to close directly from `queued` fails with `409 invalid_state_transition ({ from: 'queued', to: 'closed' })`.
+  9. Doctor approves case (`POST /api/cases/:id/approve`) transitioning `queued -> assigned`.
+  10. Doctor closes case (`POST /api/cases/:id/close`) transitioning `assigned -> closed`.
+  11. Confirmed closed case is removed from active queue.
+  12. Complete lifecycle audit trail verified across all 8 events.
+
+---
+
+## 7. Test Suite Summary
+
+All 12 backend test suites pass 100% cleanly via `npm test`:
 
 1. `cases-state-machine.test.ts` (Domain transition rules)
 2. `rules-engine.test.ts` (Deterministic clinical rules engine)
@@ -193,3 +255,5 @@ All 10 backend test suites pass 100% cleanly via `npm test`:
 8. `pipeline-full-loop.test.ts` (E2E HTTP loop, critical trigger, disagreement, fallback)
 9. `queue.service.test.ts` (Doctor role guard, risk prioritization, FIFO, projection safety)
 10. `queue.routes.test.ts` (HTTP endpoint, role gating, shared queue access without per-doctor filter)
+11. `review.service.test.ts` (Review superset, report versioning, risk override, state transitions, audit logging)
+12. `review-full-loop.test.ts` (Full vertical slice: register -> consent -> intake -> auto-process -> queue -> review -> override -> edit -> approve -> close)

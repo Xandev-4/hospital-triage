@@ -5,6 +5,7 @@ export type ErrorCode =
   | "consent_required"
   | "not_found"
   | "invalid_state_transition"
+  | "conflict"
   | "internal_error";
 
 export class AppError extends Error {
@@ -57,6 +58,10 @@ export class AppError extends Error {
     details?: Record<string, unknown>
   ) {
     return new AppError("invalid_state_transition", message, 409, details);
+  }
+
+  static conflict(message: string, details?: Record<string, unknown>) {
+    return new AppError("conflict", message, 409, details);
   }
 
   static internal(message = "Something went wrong") {
