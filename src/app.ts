@@ -1,4 +1,5 @@
 import express from "express";
+import { authRoutes } from "./modules/auth/auth.routes.js";
 import { errorHandler } from "./shared/middleware/error-handler.js";
 
 export const app = express();
@@ -11,8 +12,8 @@ app.get("/api/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-// Routes will be mounted here as each module is built:
-// app.use("/api/auth", authRoutes);
+// Feature Routes
+app.use("/api/auth", authRoutes);
 // app.use("/api/patients", patientsRoutes);
 // app.use("/api/consent", consentRoutes);
 // app.use("/api/cases", casesRoutes);

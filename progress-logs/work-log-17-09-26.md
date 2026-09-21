@@ -4,6 +4,27 @@ Running log of decisions and progress. Newest entries at the top.
 
 ---
 
+## Entry — Authentication Module & End-to-End Flow Verification
+
+**What was done:**
+
+- Created `src/shared/types/express.d.ts` extending Express `Request` with `user?: { id: string; role: UserRole }`.
+- Implemented `src/modules/auth/auth.service.ts`:
+  - `register`: Validates email, name, password (min 8 chars), hashes via bcrypt, and executes an atomic Drizzle transaction creating linked `patients` and `users` records. Preserves optional `phone_number` on the patient record. Employs anti-enumeration validation error on existing email.
+  - `login`: Validates credentials against hashed passwords and signs JWT tokens with configurable expiration and user role.
+  - `getCurrentUser`: Retrieves user profile by UUID without exposing password hash.
+- Implemented `src/modules/auth/auth.middleware.ts` with `requireAuth` (extracting Bearer token and attaching `req.user`) and `requireRole` role guard.
+- Implemented `src/modules/auth/auth.controller.ts` with clean Express 5 async handlers delegating error handling to `errorHandler` without redundant wrapper utilities.
+- Implemented `src/modules/auth/auth.routes.ts` mounting `/register`, `/login`, `/logout`, and `/me` under `/api/auth` in `src/app.ts`.
+- Verified end-to-end via curl against local dev server:
+  - `POST /api/auth/register` returned HTTP 201 with `user_id` and `role`. Direct database query confirmed both `users` and `patients` rows were created with foreign key linkage and phone number stored.
+  - `POST /api/auth/login` returned HTTP 200 with JWT token.
+  - `GET /api/auth/me` with Bearer token returned HTTP 200 with user profile.
+  - `POST /api/auth/logout` returned HTTP 200 `{"ok": true}`.
+  - Verified error envelopes: duplicate registration (400 validation error), wrong password (401 unauthorized), invalid Bearer token (401 unauthorized).
+
+---
+
 ## Entry — Express app skeleton and health check verification
 
 **What was done:**
