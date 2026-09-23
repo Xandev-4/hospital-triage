@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import { db } from "../../../src/shared/config/db.js";
 import { users, patients, consent } from "../../../src/shared/config/schema.js";
 import { eq } from "drizzle-orm";
@@ -9,7 +10,34 @@ import { AppError } from "../../../src/shared/utils/AppError.js";
 
 const BASE_URL = process.env.TEST_API_URL || "http://localhost:8000";
 
+async function ensureStandardTestPatient() {
+  const [existingUser] = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, "test@example.com"));
+
+  if (!existingUser) {
+    const passwordHash = await bcrypt.hash("password123", 10);
+    const [p] = await db
+      .insert(patients)
+      .values({
+        name: "Test Patient",
+        phoneNumber: "+919876543210",
+      })
+      .returning();
+
+    await db.insert(users).values({
+      name: "Test Patient",
+      email: "test@example.com",
+      passwordHash,
+      role: "patient",
+      patientId: p.id,
+    });
+  }
+}
+
 export async function runConsentTests() {
+  await ensureStandardTestPatient();
   console.log("\n========================================================");
   console.log("  TEST SUITE: Consent Module (api-contract.md §2)       ");
   console.log("========================================================");

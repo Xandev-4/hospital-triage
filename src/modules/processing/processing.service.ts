@@ -21,7 +21,6 @@ export interface ProcessCaseActor {
 
 export interface ProcessCaseOptions {
   skip_ai?: boolean;
-  skipAi?: boolean;
   // Simulation hooks for test suites / Demo Scenario D
   simulateFailure?: boolean;
   simulateLowConfidence?: boolean;
@@ -82,7 +81,7 @@ export async function processCase(
     throw AppError.notFound("Case not found");
   }
 
-  const shouldSkipAi = Boolean(options.skip_ai || options.skipAi);
+  const shouldSkipAi = Boolean(options.skip_ai);
 
   // ==========================================================================
   // PATH A: Skip AI (Direct manual_fallback -> queued re-evaluation)

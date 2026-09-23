@@ -36,7 +36,6 @@ export interface ExtractedStructuredData {
 export interface RawExtractionInput {
   caseId?: string;
   chiefComplaint?: string | null;
-  chief_complaint?: string | null;
   duration?: string | null;
   symptoms?: string | null;
   vitals?: Record<string, unknown> | null;
@@ -515,7 +514,7 @@ async function executeStubExtraction(
         "OCR confidence below safety threshold (handwritten/blurry document)",
       data: {
         chiefComplaint:
-          input.chiefComplaint ?? input.chief_complaint ?? "unclear complaint",
+          input.chiefComplaint ?? "unclear complaint",
         duration: input.duration ?? "unknown",
         symptoms: input.symptoms ?? "illegible handwriting",
         vitals: {},
@@ -552,7 +551,6 @@ async function executeStubExtraction(
   // Normal successful extraction
   const chiefComplaint = (
     input.chiefComplaint ??
-    input.chief_complaint ??
     ""
   ).trim();
   const symptoms = (input.symptoms ?? "").trim();

@@ -50,7 +50,7 @@ export async function runReviewFullLoopTests() {
         name: "Samantha Slice",
         email: regEmail,
         password: "PatientPass123!",
-        phone: "+919888877777",
+        phone_number: "+919888877777",
       }),
     });
 

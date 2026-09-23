@@ -48,7 +48,7 @@ export async function register(input: {
       .insert(patients)
       .values({
         name,
-        phoneNumber: phone_number,
+        phoneNumber: phone_number ?? null,
       })
       .returning({ id: patients.id });
 
