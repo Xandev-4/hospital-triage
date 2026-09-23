@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import multer from "multer";
 import { AppError } from "../utils/AppError.js";
 import { env } from "../config/env.js";
 
@@ -41,7 +42,28 @@ export function errorHandler(
     return;
   }
 
-  // 3. Unhandled runtime error or bug (log context server-side, mask internal details to client)
+  // 3. Multer upload errors (file size limit, unexpected fields, etc.)
+  if (err instanceof multer.MulterError) {
+    let message = "File upload error";
+    if (err.code === "LIMIT_FILE_SIZE") {
+      message = "File size exceeds the allowed limit (maximum 10MB)";
+    } else if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      message = `Unexpected field in upload: ${err.field}`;
+    } else if (err.code === "LIMIT_FILE_COUNT") {
+      message = "Too many files uploaded in a single request";
+    }
+
+    res.status(400).json({
+      error: {
+        code: "validation_error",
+        message,
+        details: { multer_code: err.code, field: err.field },
+      },
+    });
+    return;
+  }
+
+  // 4. Unhandled runtime error or bug (log context server-side, mask internal details to client)
   console.error(
     `[Unhandled Error] ${req.method} ${req.originalUrl}:`,
     err instanceof Error ? err.stack || err.message : err

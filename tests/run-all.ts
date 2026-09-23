@@ -10,6 +10,10 @@ import { runQueueServiceTests } from "./modules/queue/queue.service.test.js";
 import { runQueueRoutesTests } from "./modules/queue/queue.routes.test.js";
 import { runReviewServiceTests } from "./modules/review/review.service.test.js";
 import { runReviewFullLoopTests } from "./modules/review/review-full-loop.test.js";
+import { runUploadConfigTests } from "./modules/cases/upload-config.test.js";
+import { runCasesUploadServiceTests } from "./modules/cases/cases-upload.test.js";
+import { runCasesUploadRouteTests } from "./modules/cases/cases-upload-route.test.js";
+import { runCasesMultipartTests } from "./modules/cases/cases-multipart.test.js";
 
 async function main() {
   console.log(
@@ -60,6 +64,18 @@ async function main() {
 
     // 12. Full Vertical Slice End-to-End Loop
     await runReviewFullLoopTests();
+
+    // 13. Multer Upload Configuration & File Type/Signature Security
+    await runUploadConfigTests();
+
+    // 14. Cases Service: attachUpload, Status Validation & Orphan Guard
+    await runCasesUploadServiceTests();
+
+    // 15. Cases HTTP Route: POST /api/cases/:id/upload & Auth Pipeline
+    await runCasesUploadRouteTests();
+
+    // 16. Unified Multipart Intake: POST /api/cases (Design 1)
+    await runCasesMultipartTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

@@ -170,24 +170,26 @@ export async function processCase(
   // PATH B: Standard AI Extraction + Rules Engine Pipeline
   // ==========================================================================
 
-  // 2. Validate state transition to 'processing'
-  assertValidTransition(caseRecord.status, "processing");
+  // 2. Validate state transition to 'processing' (idempotent if already in processing)
+  if (caseRecord.status !== "processing") {
+    assertValidTransition(caseRecord.status, "processing");
 
-  // Persist transition to 'processing'
-  await db
-    .update(triageCases)
-    .set({ status: "processing", updatedAt: new Date() })
-    .where(eq(triageCases.id, caseId));
+    // Persist transition to 'processing'
+    await db
+      .update(triageCases)
+      .set({ status: "processing", updatedAt: new Date() })
+      .where(eq(triageCases.id, caseId));
 
-  await logAuditEvent({
-    caseId,
-    actorId: actor.id,
-    eventType: "status_changed",
-    metadata: {
-      from: caseRecord.status,
-      to: "processing",
-    },
-  });
+    await logAuditEvent({
+      caseId,
+      actorId: actor.id,
+      eventType: "status_changed",
+      metadata: {
+        from: caseRecord.status,
+        to: "processing",
+      },
+    });
+  }
 
   let isInProcessingState = true;
 

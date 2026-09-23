@@ -10,6 +10,15 @@ import bcrypt from "bcrypt";
 
 const BASE_URL = process.env.TEST_API_URL || "http://localhost:8000";
 
+const VALID_PNG_BUFFER = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+  0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
 async function ensureStandardTestPatient() {
   const [existingUser] = await db
     .select()
@@ -102,9 +111,9 @@ export async function runCasesTests() {
   if (consentRes.status !== 201) throw new Error("Consent creation failed");
   console.log("✓ Active consent recorded");
 
-  // 3. Create case with active consent
-  console.log("\n[Cases 3] POST /api/cases with active consent");
-  const createRes = await fetch(`${BASE_URL}/api/cases`, {
+  // 2b. Rejection when no file attached at all (V1 rule: at least 1 file required)
+  console.log("\n[Cases 2b] POST /api/cases with NO files attached (Rejection check)");
+  const noFilesRes = await fetch(`${BASE_URL}/api/cases`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -113,8 +122,34 @@ export async function runCasesTests() {
     body: JSON.stringify({
       chief_complaint: "Severe fever and body chills",
       duration: "2 days",
-      symptoms: "Chills, muscle pain, high fever",
     }),
+  });
+  const noFilesData = await noFilesRes.json();
+  if (noFilesRes.status !== 400 || noFilesData.error?.code !== "validation_error") {
+    throw new Error(
+      `Expected 400 validation_error for missing files, got ${noFilesRes.status}: ${JSON.stringify(noFilesData)}`
+    );
+  }
+  console.log("✓ Rejection confirmed: Case creation blocked with 400 validation_error when files are missing");
+
+  // 3. Create case with active consent and image upload via multipart/form-data
+  console.log("\n[Cases 3] POST /api/cases with active consent and attached file");
+  const caseForm = new FormData();
+  caseForm.append("chief_complaint", "Severe fever and body chills");
+  caseForm.append("duration", "2 days");
+  caseForm.append("symptoms", "Chills, muscle pain, high fever");
+  caseForm.append(
+    "image",
+    new Blob([VALID_PNG_BUFFER], { type: "image/png" }),
+    "report.png"
+  );
+
+  const createRes = await fetch(`${BASE_URL}/api/cases`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${tokenP1}`,
+    },
+    body: caseForm,
   });
   const createData = await createRes.json();
   if (

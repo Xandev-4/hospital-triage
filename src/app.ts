@@ -8,7 +8,14 @@ import { errorHandler } from "./shared/middleware/error-handler.js";
 export const app = express();
 
 // Global Middlewares
-app.use(express.json());
+// Explicit payload limit to prevent unbounded JSON/body request exhaustion
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+
+// SECURITY ARCHITECTURE:
+// The 'uploads/' directory is purposely NEVER served statically (no express.static('uploads')).
+// Serving patient uploads directly would bypass authentication and expose PHI.
+// Any file retrieval must go through an authenticated, role-verified endpoint.
 
 // Health Check
 app.get("/api/health", (_req, res) => {

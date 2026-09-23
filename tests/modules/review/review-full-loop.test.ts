@@ -13,6 +13,32 @@ import {
 
 const BASE_URL = process.env.TEST_API_URL || "http://localhost:8000";
 
+const VALID_PNG_BUFFER = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+  0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+function buildCaseFormData(payload: Record<string, any>): FormData {
+  const form = new FormData();
+  for (const [key, val] of Object.entries(payload)) {
+    if (key === "vitals" && typeof val === "object") {
+      form.append(key, JSON.stringify(val));
+    } else if (val !== undefined && val !== null) {
+      form.append(key, String(val));
+    }
+  }
+  form.append(
+    "image",
+    new Blob([VALID_PNG_BUFFER], { type: "image/png" }),
+    "report.png"
+  );
+  return form;
+}
+
 export async function runReviewFullLoopTests() {
   console.log("\n=======================================================");
   console.log("   TEST SUITE: Full End-to-End Vertical Slice Loop     ");
@@ -110,10 +136,9 @@ export async function runReviewFullLoopTests() {
     const caseRes = await fetch(`${BASE_URL}/api/cases`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
         Authorization: `Bearer ${patientToken}`,
       },
-      body: JSON.stringify({
+      body: buildCaseFormData({
         chief_complaint: "Acute onset dyspnea and tachycardia",
         duration: "3 hours",
         symptoms: "Severe difficulty catching breath while sitting resting",

@@ -13,7 +13,7 @@ export async function runAiExtractionTests() {
   console.log("\n--- Testing Happy Path Structured Extraction ---");
   {
     const res = await extractStructuredData({
-      chief_complaint: "fever and headache",
+      chiefComplaint: "fever and headache",
       duration: "3 days",
       symptoms: "high fever, severe headache, chills",
       vitals: {
@@ -44,7 +44,7 @@ export async function runAiExtractionTests() {
   console.log("\n--- Testing Section 8 Missing-Info Detection ---");
   {
     const res = await extractStructuredData({
-      chief_complaint: "chest pain",
+      chiefComplaint: "chest pain",
       duration: "1 hour",
       symptoms: "dull aching pain",
       // missing vitals, missing radiation pattern
@@ -69,7 +69,7 @@ export async function runAiExtractionTests() {
   console.log("\n--- Testing Low-Confidence Handling (Demo Scenario D) ---");
   {
     const res = await extractStructuredData({
-      chief_complaint: "unclear scribbles",
+      chiefComplaint: "unclear scribbles",
       simulateLowConfidence: true,
     });
 

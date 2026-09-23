@@ -246,10 +246,12 @@ Validates (in order): (1) consent exists for `patient_id`, (2) `given_by` matche
 
 Server internally fires `POST /api/cases/:id/process` after upload(s) land — not called by frontend.
 
+> **Changed from original contract:** `POST /api/cases` is now `multipart/form-data`, carrying both the text fields and the upload file(s) in a single request, instead of a separate `POST /api/cases/:id/upload` call after case creation. Changed to eliminate a processing-trigger race condition between case creation and upload arrival — one request, one atomic create-with-upload-and-trigger operation. `POST /api/cases/:id/upload` is removed from V1's active endpoint list as a result.
+
 **Errors:**
 
 - `403 consent_required` — `{ "error": { "code": "consent_required" } }` → frontend routes back to consent screen.
-- `400 validation_error` — missing `chief_complaint`.
+- `400 validation_error` — missing `chief_complaint` or missing required upload files.
 
 ---
 
