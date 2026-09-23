@@ -105,14 +105,7 @@ export async function createCase(input: CreateCaseInput, actor: CaseActor) {
     // 1. Validate consent FIRST — fails closed with 403 consent_required before touching triage_cases
     const activeConsent = await checkValidConsent(resolvedPatientId, mode);
 
-    // 2. Validate that at least one file is attached (text alone is not a complete submission)
-    if (!input.voice_file && !input.image_file) {
-      throw AppError.validation(
-        "At least one file upload ('voice' or 'image') is required for case intake"
-      );
-    }
-
-    // 3. Validate free-text inputs & enforce length limits
+    // 2. Validate free-text inputs & enforce length limits
     const chiefComplaint = input.chief_complaint?.trim();
     if (!chiefComplaint) {
       throw AppError.validation("chief_complaint is required");
@@ -229,22 +222,24 @@ export async function createCase(input: CreateCaseInput, actor: CaseActor) {
     // If a case were somehow created without uploads, it would remain in 'submitted'
     // indefinitely in V1. Automated reminders and timeout fallbacks are deferred to V3.
 
-    // 3. Trigger internal-only processing pipeline directly
+    // 3. Trigger internal-only processing pipeline directly if files were attached at intake
     let finalStatus: CaseStatus = createdCase!.status;
-    try {
-      const processResult = await processCase(createdCase!.id, actor, {
-        simulateFailure: input.simulate_failure,
-        simulateLowConfidence: input.simulate_low_confidence,
-        simulateTimeout: input.simulate_timeout,
-        simulateMalformedOutput: input.simulate_malformed_output,
-        aiSuggestedRisk: input.ai_suggested_risk,
-      });
-      finalStatus = processResult.status;
-    } catch (err) {
-      console.error(
-        `[Cases Service] Internal processing exception for case ${createdCase!.id}:`,
-        err
-      );
+    if (attachedUploads.length > 0) {
+      try {
+        const processResult = await processCase(createdCase!.id, actor, {
+          simulateFailure: input.simulate_failure,
+          simulateLowConfidence: input.simulate_low_confidence,
+          simulateTimeout: input.simulate_timeout,
+          simulateMalformedOutput: input.simulate_malformed_output,
+          aiSuggestedRisk: input.ai_suggested_risk,
+        });
+        finalStatus = processResult.status;
+      } catch (err) {
+        console.error(
+          `[Cases Service] Internal processing exception for case ${createdCase!.id}:`,
+          err
+        );
+      }
     }
 
     // 4. Return minimal safe response per api-contract.md §4
@@ -602,7 +597,19 @@ export async function attachUpload(
       },
     });
 
-    // 6. Return response matching api-contract.md §POST /api/cases/:id/upload
+    // 6. Idempotency guard: trigger processing if status === 'submitted'
+    if (caseRecord.status === "submitted") {
+      try {
+        await processCase(caseRecord.id, actor);
+      } catch (err) {
+        console.error(
+          `[Cases Service] Internal processing exception on upload for case ${caseRecord.id}:`,
+          err
+        );
+      }
+    }
+
+    // 7. Return response matching api-contract.md §POST /api/cases/:id/upload
     return {
       upload_id: createdUpload.id,
       case_id: createdUpload.caseId,

@@ -135,6 +135,13 @@ export async function runCasesUploadServiceTests() {
     assert.equal(dbUpload.caseId, createdCaseId);
     assert.equal(dbUpload.modality, "image_ocr");
 
+    // Verify processing triggered and moved case to queued
+    const [dbCase] = await db
+      .select()
+      .from(triageCases)
+      .where(eq(triageCases.id, createdCaseId));
+    assert.equal(dbCase?.status, "queued", "Processing trigger must transition case to queued");
+
     // Verify audit event
     const [auditEntry] = await db
       .select()
@@ -144,7 +151,7 @@ export async function runCasesUploadServiceTests() {
     assert.ok(auditEntry, "Audit event must be logged");
     assert.equal(auditEntry.eventType, "intake_submitted");
     assert.equal((auditEntry.metadata as any)?.action, "file_uploaded");
-    console.log("  ✓ Happy path passed: Upload attached, stored in DB, and audit logged");
+    console.log("  ✓ Happy path passed: Upload attached, stored in DB, and auto-processed to queued");
 
     // ------------------------------------------------------------------------
     // Test 2: Row-level Ownership Check (Anti-Enumeration) & Orphan Cleanup

@@ -110,22 +110,24 @@ export async function runCasesMultipartTests() {
     patientConsent = c;
 
     // ------------------------------------------------------------------------
-    // Test 1: Zero files attached -> 400 validation_error (V1 complete intake requirement)
+    // Test 1: Text-only intake -> 201 Created with status 'submitted'
     // ------------------------------------------------------------------------
-    console.log("  → Test 1: Reject case creation when no file is attached (400)");
+    console.log("  → Test 1: Intake with text only (status 'submitted')");
     const textOnlyForm = new FormData();
     textOnlyForm.append("chief_complaint", "High fever and chills");
     textOnlyForm.append("duration", "3 days");
 
-    const noFileRes = await fetch(`${BASE_URL}/api/cases`, {
+    const textOnlyRes = await fetch(`${BASE_URL}/api/cases`, {
       method: "POST",
       headers: { Authorization: `Bearer ${patientToken}` },
       body: textOnlyForm,
     });
-    assert.equal(noFileRes.status, 400);
-    const noFileData = await noFileRes.json();
-    assert.equal(noFileData.error?.code, "validation_error");
-    console.log("  ✓ Zero-upload intake rejected with 400 validation_error");
+    assert.equal(textOnlyRes.status, 201);
+    const textOnlyData = await textOnlyRes.json();
+    assert.equal(textOnlyData.status, "submitted");
+    assert.ok(textOnlyData.case_id);
+    createdCaseIds.push(textOnlyData.case_id);
+    console.log("  ✓ Text-only intake created with status 'submitted'");
 
     // ------------------------------------------------------------------------
     // Test 2: Text + Image upload -> 201 Created & Auto-Processed

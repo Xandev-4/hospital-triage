@@ -111,8 +111,8 @@ export async function runCasesTests() {
   if (consentRes.status !== 201) throw new Error("Consent creation failed");
   console.log("✓ Active consent recorded");
 
-  // 2b. Rejection when no file attached at all (V1 rule: at least 1 file required)
-  console.log("\n[Cases 2b] POST /api/cases with NO files attached (Rejection check)");
+  // 2b. Case creation with text only (status: 'submitted', ready for upload)
+  console.log("\n[Cases 2b] POST /api/cases with text only (status: 'submitted')");
   const noFilesRes = await fetch(`${BASE_URL}/api/cases`, {
     method: "POST",
     headers: {
@@ -125,12 +125,12 @@ export async function runCasesTests() {
     }),
   });
   const noFilesData = await noFilesRes.json();
-  if (noFilesRes.status !== 400 || noFilesData.error?.code !== "validation_error") {
+  if (noFilesRes.status !== 201 || noFilesData.status !== "submitted") {
     throw new Error(
-      `Expected 400 validation_error for missing files, got ${noFilesRes.status}: ${JSON.stringify(noFilesData)}`
+      `Expected 201 with status submitted, got ${noFilesRes.status}: ${JSON.stringify(noFilesData)}`
     );
   }
-  console.log("✓ Rejection confirmed: Case creation blocked with 400 validation_error when files are missing");
+  console.log("✓ Case created in 'submitted' status awaiting file upload");
 
   // 3. Create case with active consent and image upload via multipart/form-data
   console.log("\n[Cases 3] POST /api/cases with active consent and attached file");

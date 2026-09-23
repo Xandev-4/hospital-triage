@@ -235,12 +235,53 @@ export async function runCasesUploadRouteTests() {
     assert.equal(validData.modality, "image_ocr");
     assert.ok(validData.file_path, "Response must contain file_path");
     filesToCleanup.push(validData.file_path);
-    console.log("  ✓ Multipart file upload successfully attached (201 Created)");
+
+    // Confirm row lands in case_uploads table
+    const [dbUpload] = await db
+      .select()
+      .from(caseUploads)
+      .where(eq(caseUploads.id, validData.upload_id));
+    assert.ok(dbUpload, "Upload row must exist in case_uploads table");
+    assert.equal(dbUpload.caseId, createdCaseId);
+    assert.equal(dbUpload.modality, "image_ocr");
+
+    // Confirm processing fires at that moment and transitions case to queued
+    const [processedCase] = await db
+      .select()
+      .from(triageCases)
+      .where(eq(triageCases.id, createdCaseId));
+    assert.equal(
+      processedCase?.status,
+      "queued",
+      "Upload attachment must trigger processing and transition case to queued"
+    );
+
+    // Confirm clinical report version 1 is created
+    const [reportV1] = await db
+      .select()
+      .from(caseReportVersions)
+      .where(eq(caseReportVersions.caseId, createdCaseId));
+    assert.ok(reportV1, "Processing must produce clinical report version 1");
+
+    console.log("  ✓ Multipart file upload landed in case_uploads & auto-processed to queued (201 Created)");
 
     // ------------------------------------------------------------------------
     // Step 5: Spoofed content upload -> 400 validation_error (magic bytes rejection)
     // ------------------------------------------------------------------------
     console.log("  → Step 5: Spoofed script disguised as image rejected (400)");
+    const [spoofCase] = await db
+      .insert(triageCases)
+      .values({
+        patientId: patientA.id,
+        createdBy: uA.id,
+        consentId: patientConsent.id,
+        mode: "self",
+        status: "submitted",
+        chiefComplaint: "Spoof test complaint",
+      })
+      .returning();
+    createdCaseIds.push(spoofCase.id);
+
     const spoofForm = new FormData();
     spoofForm.append("modality", "image_ocr");
     spoofForm.append(
@@ -250,7 +291,7 @@ export async function runCasesUploadRouteTests() {
     );
 
     const spoofRes = await fetch(
-      `${BASE_URL}/api/cases/${createdCaseId}/upload`,
+      `${BASE_URL}/api/cases/${spoofCase.id}/upload`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${tokenPatientA}` },
