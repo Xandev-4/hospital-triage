@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "../../shared/config/db.js";
-import { consent, patients, triageCases } from "../../shared/config/schema.js";
+import { consent, patients, triageCases, users } from "../../shared/config/schema.js";
 import { AppError } from "../../shared/utils/AppError.js";
 
 const CONSENT_VALIDITY_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
@@ -116,9 +116,30 @@ export async function checkValidConsent(
   return latestConsent;
 }
 
-export async function getConsentByCaseId(
+export interface ConsentActor {
+  id: string;
+  role: string;
+  patientId?: string | null;
+}
+
+/**
+ * Fetches the consent record linked to a case via case.consent_id FK.
+ *
+ * Enforces row-level ownership:
+ * - patient: case.patient_id matches their own patient id
+ * - receptionist: case.created_by matches their user id
+ * - doctor: no restriction (authorized for review/audit)
+ *
+ * Anti-enumeration: returns 404 not_found if non-existent or not owned (never 403).
+ * Looks up consent via case.consent_id FK, not fresh patient_id lookup,
+ * preventing fishing for other patients' consents.
+ *
+ * Returns api-contract.md §2 shape:
+ * { consent_id, patient_id, given_by, staff_id, policy_version, given_at }
+ */
+export async function getConsentByCase(
   caseId: string,
-  user: { id: string; role: string; patientId?: string | null }
+  actor: ConsentActor
 ) {
   const [caseRecord] = await db
     .select({
@@ -134,21 +155,35 @@ export async function getConsentByCaseId(
     throw AppError.notFound("Case not found");
   }
 
-  // Role check: doctor -> any, receptionist -> createdBy, patient -> patientId
-  if (user.role === "doctor") {
-    // Authorized
-  } else if (user.role === "receptionist") {
-    if (caseRecord.createdBy !== user.id) {
-      throw AppError.notFound("Case not found"); // Anti-enumeration
+  // 1. Ownership check on the case itself (anti-enumeration: 404, not 403)
+  if (actor.role === "doctor") {
+    // Doctors have no restriction
+  } else if (actor.role === "receptionist") {
+    if (caseRecord.createdBy !== actor.id) {
+      throw AppError.notFound("Case not found");
     }
-  } else if (user.role === "patient") {
-    if (!user.patientId || caseRecord.patientId !== user.patientId) {
-      throw AppError.notFound("Case not found"); // Anti-enumeration
+  } else if (actor.role === "patient") {
+    let patientId = actor.patientId;
+    if (!patientId) {
+      const [userRecord] = await db
+        .select({ patientId: users.patientId })
+        .from(users)
+        .where(eq(users.id, actor.id));
+      patientId = userRecord?.patientId ?? null;
+    }
+
+    if (!patientId || caseRecord.patientId !== patientId) {
+      throw AppError.notFound("Case not found");
     }
   } else {
-    throw AppError.forbidden();
+    throw AppError.forbidden("Unauthorized role for viewing consent");
   }
 
+  if (!caseRecord.consentId) {
+    throw AppError.notFound("Consent record not found");
+  }
+
+  // 2. Look up consent via case.consent_id (FK link, not searching consent directly)
   const [consentRecord] = await db
     .select()
     .from(consent)
@@ -158,6 +193,7 @@ export async function getConsentByCaseId(
     throw AppError.notFound("Consent record not found");
   }
 
+  // 3. Return shape matching api-contract.md §2
   return {
     consent_id: consentRecord.id,
     patient_id: consentRecord.patientId,
@@ -167,3 +203,5 @@ export async function getConsentByCaseId(
     given_at: consentRecord.givenAt.toISOString(),
   };
 }
+
+export const getConsentByCaseId = getConsentByCase;

@@ -73,21 +73,6 @@ export async function createConsent(req: Request, res: Response) {
 
 export async function getConsent(req: Request, res: Response) {
   const caseId = req.params.caseId as string;
-  let patientId: string | null = null;
-
-  if (req.user!.role === "patient") {
-    const [userRecord] = await db
-      .select({ patientId: users.patientId })
-      .from(users)
-      .where(eq(users.id, req.user!.id));
-    patientId = userRecord?.patientId ?? null;
-  }
-
-  const result = await consentService.getConsentByCaseId(caseId, {
-    id: req.user!.id,
-    role: req.user!.role,
-    patientId,
-  });
-
+  const result = await consentService.getConsentByCase(caseId, req.user!);
   res.status(200).json(result);
 }
