@@ -108,6 +108,15 @@ casesRoutes.post(
   controller.attachUpload
 );
 
+// PATCH /api/cases/:id/manual-fallback — manual fallback submission for failed/low-confidence cases
+casesRoutes.patch(
+  "/:id/manual-fallback",
+  requireAuth,
+  requireRole("patient", "receptionist"),
+  controller.submitManualFallback
+);
+
 // Mount doctor review sub-routes under /api/cases
 // GET /:id/review, PATCH /:id/edit, PATCH /:id/risk-level, POST /:id/approve, POST /:id/close
 casesRoutes.use("/", reviewRoutes);
+

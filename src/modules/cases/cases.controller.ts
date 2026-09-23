@@ -108,3 +108,14 @@ export async function attachUpload(req: Request, res: Response) {
 
   res.status(201).json(result);
 }
+
+export async function submitManualFallback(req: Request, res: Response) {
+  const caseId = req.params.id as string;
+  const result = await casesService.submitManualFallback(
+    caseId,
+    req.body,
+    req.user!
+  );
+  res.status(200).json(result);
+}
+

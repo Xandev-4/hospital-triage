@@ -15,7 +15,11 @@ import { cleanupFile } from "../../shared/config/upload.js";
 import { processCase } from "../processing/processing.service.js";
 import { assertValidTransition, type CaseStatus } from "./cases.state-machine.js";
 import type { UserRole } from "../../shared/types/express.d.js";
-import type { RiskLevel } from "../processing/rules-engine.js";
+import {
+  evaluateRisk,
+  type RiskLevel,
+} from "../processing/rules-engine.js";
+import type { ExtractedVitals } from "../processing/ai-extraction.js";
 
 const MAX_CHIEF_COMPLAINT_LENGTH = 1000;
 const MAX_SYMPTOMS_LENGTH = 5000;
@@ -628,4 +632,336 @@ export async function attachUpload(
     throw err;
   }
 }
+
+export interface SubmitManualFallbackInput {
+  chief_complaint?: string;
+  chiefComplaint?: string;
+  duration?: string;
+  symptoms?: string;
+  vitals?: Record<string, unknown>;
+}
+
+/**
+ * Validates manually-entered vitals with strict physiological range enforcement.
+ * Prevents impossible or corrupted numbers (e.g. heart rate -5 or 9999) from entering
+ * the rules engine as accepted clinical facts.
+ */
+export function validateManualVitals(rawVitals: unknown): ExtractedVitals {
+  if (!rawVitals || typeof rawVitals !== "object" || Array.isArray(rawVitals)) {
+    return {};
+  }
+
+  const v = rawVitals as Record<string, unknown>;
+  const result: ExtractedVitals = {};
+
+  const parseAndCheckRange = (
+    field: string,
+    val: unknown,
+    min: number,
+    max: number,
+    unit: string
+  ): number | null => {
+    if (val === null || val === undefined || val === "") return null;
+    let num: number;
+    if (typeof val === "number") {
+      num = val;
+    } else if (typeof val === "string") {
+      const parsed = parseFloat(val.trim());
+      if (!Number.isFinite(parsed)) {
+        throw AppError.validation(
+          `Vital '${field}' must be a valid number, got '${val}'`
+        );
+      }
+      num = parsed;
+    } else {
+      throw AppError.validation(
+        `Vital '${field}' must be a number, got ${typeof val}`
+      );
+    }
+
+    if (!Number.isFinite(num)) {
+      throw AppError.validation(`Vital '${field}' must be a finite number`);
+    }
+
+    if (num < min || num > max) {
+      throw AppError.validation(
+        `Vital '${field}' value ${num} is physiologically implausible (must be between ${min} and ${max} ${unit})`,
+        { field, value: num, min, max, unit }
+      );
+    }
+
+    return num;
+  };
+
+  // Heart Rate: 20 - 300 bpm
+  const rawHr = v.heartRate ?? v.heart_rate;
+  if (rawHr !== undefined && rawHr !== null && rawHr !== "") {
+    result.heartRate = parseAndCheckRange("heartRate", rawHr, 20, 300, "bpm");
+  }
+
+  // SpO2: 0 - 100 %
+  if (v.spo2 !== undefined && v.spo2 !== null && v.spo2 !== "") {
+    result.spo2 = parseAndCheckRange("spo2", v.spo2, 0, 100, "%");
+  }
+
+  // Systolic BP: 30 - 350 mmHg
+  const rawSys = v.systolicBp ?? v.systolic_bp;
+  if (rawSys !== undefined && rawSys !== null && rawSys !== "") {
+    result.systolicBp = parseAndCheckRange(
+      "systolicBp",
+      rawSys,
+      30,
+      350,
+      "mmHg"
+    );
+  }
+
+  // Diastolic BP: 10 - 250 mmHg
+  const rawDia = v.diastolicBp ?? v.diastolic_bp;
+  if (rawDia !== undefined && rawDia !== null && rawDia !== "") {
+    result.diastolicBp = parseAndCheckRange(
+      "diastolicBp",
+      rawDia,
+      10,
+      250,
+      "mmHg"
+    );
+  }
+
+  // Blood Sugar: 10 - 1500 mg/dL
+  const rawBs = v.bloodSugar ?? v.blood_sugar;
+  if (rawBs !== undefined && rawBs !== null && rawBs !== "") {
+    result.bloodSugar = parseAndCheckRange(
+      "bloodSugar",
+      rawBs,
+      10,
+      1500,
+      "mg/dL"
+    );
+  }
+
+  // Temperature: 70 - 120 °F (or 20 - 50 °C)
+  if (
+    v.temperature !== undefined &&
+    v.temperature !== null &&
+    v.temperature !== ""
+  ) {
+    const rawUnit = String(
+      v.temperatureUnit ?? v.temperature_unit ?? "F"
+    ).toUpperCase();
+    if (rawUnit === "C") {
+      result.temperature = parseAndCheckRange(
+        "temperature",
+        v.temperature,
+        20,
+        50,
+        "°C"
+      );
+      result.temperatureUnit = "C";
+    } else {
+      result.temperature = parseAndCheckRange(
+        "temperature",
+        v.temperature,
+        70,
+        120,
+        "°F"
+      );
+      result.temperatureUnit = "F";
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Submits manual fallback data for a case in 'manual_fallback' status.
+ * Validates free-text inputs, validates physiological plausibility of vitals,
+ * checks row-level ownership, runs the deterministic rules engine (evaluateRisk),
+ * writes a new report version with source: 'manual', transitions status
+ * from 'manual_fallback' -> 'queued', and records the status_changed audit event.
+ */
+export async function submitManualFallback(
+  caseId: string,
+  input: SubmitManualFallbackInput,
+  actor: CaseActor
+) {
+  const rawComplaint = input.chief_complaint ?? input.chiefComplaint;
+  const chiefComplaint = rawComplaint?.trim();
+  if (!chiefComplaint) {
+    throw AppError.validation("chief_complaint is required");
+  }
+  if (chiefComplaint.length > MAX_CHIEF_COMPLAINT_LENGTH) {
+    throw AppError.validation(
+      `chief_complaint exceeds maximum length of ${MAX_CHIEF_COMPLAINT_LENGTH} characters`
+    );
+  }
+
+  const symptoms = input.symptoms?.trim() || null;
+  if (symptoms && symptoms.length > MAX_SYMPTOMS_LENGTH) {
+    throw AppError.validation(
+      `symptoms exceeds maximum length of ${MAX_SYMPTOMS_LENGTH} characters`
+    );
+  }
+
+  const duration = input.duration?.trim() || null;
+  if (duration && duration.length > MAX_DURATION_LENGTH) {
+    throw AppError.validation(
+      `duration exceeds maximum length of ${MAX_DURATION_LENGTH} characters`
+    );
+  }
+
+  // Validate vitals with strict physiological bounds checking
+  const validatedVitals = validateManualVitals(input.vitals);
+
+  return await db.transaction(async (tx) => {
+    // 1. Fetch case record inside transaction
+    const [caseRecord] = await tx
+      .select()
+      .from(triageCases)
+      .where(eq(triageCases.id, caseId));
+
+    if (!caseRecord) {
+      throw AppError.notFound("Case not found");
+    }
+
+    // 2. Row-level ownership check (anti-enumeration pattern)
+    if (actor.role === "doctor") {
+      throw AppError.forbidden("Doctors cannot submit manual fallback");
+    } else if (actor.role === "receptionist") {
+      if (caseRecord.createdBy !== actor.id) {
+        throw AppError.notFound("Case not found");
+      }
+    } else if (actor.role === "patient") {
+      const [userRecord] = await tx
+        .select({ patientId: users.patientId })
+        .from(users)
+        .where(eq(users.id, actor.id));
+
+      if (!userRecord || userRecord.patientId !== caseRecord.patientId) {
+        throw AppError.notFound("Case not found");
+      }
+    } else {
+      throw AppError.forbidden("Unauthorized role for manual fallback");
+    }
+
+    // 3. Status Guard: only valid when status === 'manual_fallback'
+    if (caseRecord.status !== "manual_fallback") {
+      throw AppError.invalidStateTransition(
+        `Cannot submit manual fallback for case in '${caseRecord.status}' status. Only cases in 'manual_fallback' status can be updated via manual fallback.`,
+        {
+          current_status: caseRecord.status,
+          allowed_statuses: ["manual_fallback"],
+        }
+      );
+    }
+
+    // 4. State machine transition check
+    assertValidTransition(caseRecord.status, "queued");
+
+    // 5. Evaluate risk using the exact same pure deterministic rules engine
+    const evaluatedRisk = evaluateRisk({
+      chiefComplaint,
+      duration,
+      symptoms,
+      vitals: validatedVitals,
+    });
+
+    // 6. Write case_report_versions (source: 'manual', version: next)
+    const [latestVersion] = await tx
+      .select({ versionNumber: caseReportVersions.versionNumber })
+      .from(caseReportVersions)
+      .where(eq(caseReportVersions.caseId, caseId))
+      .orderBy(desc(caseReportVersions.versionNumber))
+      .limit(1);
+
+    const nextVersion = (latestVersion?.versionNumber ?? 0) + 1;
+
+    await tx.insert(caseReportVersions).values({
+      caseId,
+      versionNumber: nextVersion,
+      source: "manual",
+      content: {
+        chief_complaint: {
+          value: chiefComplaint,
+          source: "manual",
+        },
+        duration: {
+          value: duration ?? "",
+          source: "manual",
+        },
+        symptoms: {
+          value: symptoms ?? "",
+          source: "manual",
+        },
+        vitals: {
+          value: validatedVitals,
+          source: "manual",
+        },
+        missing_info: evaluatedRisk.missingCriticalInfo,
+        risk_level: evaluatedRisk.riskLevel,
+        ai_rules_disagreement: {
+          present: false,
+          ai_suggested: null,
+          rules_result: evaluatedRisk.riskLevel,
+          note: null,
+        },
+        triggered_rules: evaluatedRisk.triggeredRules,
+        rule_details: evaluatedRisk.ruleDetails,
+      },
+      editedBy: actor.id,
+    });
+
+    // 7. Atomic status update with idempotency guard
+    const [updatedCase] = await tx
+      .update(triageCases)
+      .set({
+        status: "queued",
+        riskLevel: evaluatedRisk.riskLevel,
+        chiefComplaint,
+        duration,
+        symptoms,
+        vitals: validatedVitals,
+        aiRulesDisagreement: false,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(triageCases.id, caseId),
+          eq(triageCases.status, "manual_fallback")
+        )
+      )
+      .returning();
+
+    if (!updatedCase) {
+      throw AppError.invalidStateTransition(
+        "Case status changed concurrently during fallback submission",
+        { case_id: caseId }
+      );
+    }
+
+    // 8. Append audit event
+    await tx.insert(auditLog).values({
+      caseId,
+      actorId: actor.id,
+      eventType: "status_changed",
+      metadata: {
+        from: "manual_fallback",
+        to: "queued",
+        reason: "manual_fallback_submitted",
+        risk_level: evaluatedRisk.riskLevel,
+        triggered_rules_count: evaluatedRisk.triggeredRules.length,
+        report_version: nextVersion,
+      },
+    });
+
+    // 9. Return response matching api-contract.md §6
+    return {
+      case_id: updatedCase.id,
+      status: updatedCase.status as "queued",
+      risk_level: evaluatedRisk.riskLevel,
+      version: nextVersion,
+    };
+  });
+}
+
 

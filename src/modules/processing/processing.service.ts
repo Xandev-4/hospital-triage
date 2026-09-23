@@ -237,6 +237,11 @@ export async function processCase(
 
       isInProcessingState = false;
 
+      const isProviderFailure =
+        extraction.reason === "provider_error" ||
+        extraction.reason === "ai_extraction_timeout";
+      const fallbackCategory = isProviderFailure ? "provider_failure" : "bad_input";
+
       // Log distinct AI failure event
       await logAuditEvent({
         caseId,
@@ -245,6 +250,7 @@ export async function processCase(
         metadata: {
           success: false,
           reason: extraction.reason,
+          fallback_category: fallbackCategory,
           confidence: extraction.confidence,
           error: extraction.error ?? null,
           is_bug: false,
@@ -260,6 +266,7 @@ export async function processCase(
           from: "processing",
           to: "manual_fallback",
           reason: extraction.reason,
+          fallback_category: fallbackCategory,
         },
       });
 

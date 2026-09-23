@@ -14,6 +14,7 @@ import { runUploadConfigTests } from "./modules/cases/upload-config.test.js";
 import { runCasesUploadServiceTests } from "./modules/cases/cases-upload.test.js";
 import { runCasesUploadRouteTests } from "./modules/cases/cases-upload-route.test.js";
 import { runCasesMultipartTests } from "./modules/cases/cases-multipart.test.js";
+import { runCasesManualFallbackTests } from "./modules/cases/cases-manual-fallback.test.js";
 
 async function main() {
   console.log(
@@ -76,6 +77,9 @@ async function main() {
 
     // 16. Unified Multipart Intake: POST /api/cases (Design 1)
     await runCasesMultipartTests();
+
+    // 17. Manual Fallback: PATCH /api/cases/:id/manual-fallback & Rules Evaluation
+    await runCasesManualFallbackTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
