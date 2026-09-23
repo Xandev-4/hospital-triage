@@ -19,6 +19,16 @@ import { AppError } from "../../../src/shared/utils/AppError.js";
 
 const BASE_URL = process.env.TEST_API_URL || "http://localhost:8000";
 
+// Minimal valid PNG (Image) buffer
+const VALID_PNG_BUFFER = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+  0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
 export async function runCasesManualFallbackTests() {
   console.log("\n========================================================");
   console.log("  TEST SUITE: Manual Fallback Submission (API §6)       ");
@@ -501,6 +511,235 @@ export async function runCasesManualFallbackTests() {
     assert.equal(ownerData.risk_level, "low");
 
     console.log("  ✓ HTTP endpoint confirmed: 404 non-owner, 403 doctor, 200 valid owner");
+
+    // ------------------------------------------------------------------------
+    // Test 7: Full Failure-Recovery Loop & Queue Integration
+    // ------------------------------------------------------------------------
+    console.log("  → Test 7: Full Failure-Recovery Loop (AI Failure -> manual_fallback -> queued -> Doctor Queue)");
+
+    // Step A: Force case into manual_fallback by submitting deliberate unparseable input (BAD_INPUT) with image
+    const badInputForm = new FormData();
+    badInputForm.append("chief_complaint", "BAD_INPUT: Unparseable blurred handwritten notes on intake");
+    badInputForm.append("duration", "2 days");
+    badInputForm.append(
+      "image",
+      new Blob([VALID_PNG_BUFFER], { type: "image/png" }),
+      "unreadable_document.png"
+    );
+
+    const badInputRes = await fetch(`${BASE_URL}/api/cases`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tokenPatientA}` },
+      body: badInputForm,
+    });
+    assert.equal(badInputRes.status, 201, "Case creation must succeed");
+    const badInputCase = await badInputRes.json();
+    assert.ok(badInputCase.case_id, "Must return case_id");
+    createdCaseIds.push(badInputCase.case_id);
+
+    // Verify it automatically landed in 'manual_fallback' due to AI extraction failure/low confidence
+    assert.equal(
+      badInputCase.status,
+      "manual_fallback",
+      "Case must land in 'manual_fallback' when AI extraction encounters bad/unparseable input"
+    );
+
+    // Confirm DB record shows 'manual_fallback'
+    const [dbBadCase] = await db
+      .select()
+      .from(triageCases)
+      .where(eq(triageCases.id, badInputCase.case_id));
+    assert.equal(dbBadCase.status, "manual_fallback");
+
+    // Step B: Malformed manual input attempts on this manual_fallback case
+    // 1. Non-numeric vital string
+    const malformedVitalsRes = await fetch(
+      `${BASE_URL}/api/cases/${badInputCase.case_id}/manual-fallback`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenPatientA}`,
+        },
+        body: JSON.stringify({
+          chief_complaint: "Chest discomfort",
+          vitals: { heartRate: "one-hundred-twenty" },
+        }),
+      }
+    );
+    assert.equal(malformedVitalsRes.status, 400, "Malformed non-numeric vital must return 400");
+    const malformedVitalsData = await malformedVitalsRes.json();
+    assert.equal(malformedVitalsData.error?.code, "validation_error");
+
+    // 2. Empty / whitespace-only chief complaint
+    const emptyComplaintRes = await fetch(
+      `${BASE_URL}/api/cases/${badInputCase.case_id}/manual-fallback`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenPatientA}`,
+        },
+        body: JSON.stringify({
+          chief_complaint: "   ",
+          vitals: { heartRate: 80 },
+        }),
+      }
+    );
+    assert.equal(emptyComplaintRes.status, 400, "Empty chief complaint must return 400");
+    const emptyComplaintData = await emptyComplaintRes.json();
+    assert.equal(emptyComplaintData.error?.code, "validation_error");
+
+    // 3. Implausible physiological bounds (HR 9999)
+    const impossibleVitalsRes = await fetch(
+      `${BASE_URL}/api/cases/${badInputCase.case_id}/manual-fallback`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenPatientA}`,
+        },
+        body: JSON.stringify({
+          chief_complaint: "Chest discomfort",
+          vitals: { heartRate: 9999 },
+        }),
+      }
+    );
+    assert.equal(impossibleVitalsRes.status, 400, "Implausible vitals must return 400");
+
+    // Confirm that after all malformed attempts, case status is still 'manual_fallback' and 0 report versions exist
+    const [caseStillFallback] = await db
+      .select()
+      .from(triageCases)
+      .where(eq(triageCases.id, badInputCase.case_id));
+    assert.equal(caseStillFallback.status, "manual_fallback");
+
+    const preVersions = await db
+      .select()
+      .from(caseReportVersions)
+      .where(eq(caseReportVersions.caseId, badInputCase.case_id));
+    assert.equal(preVersions.length, 0, "No report version should be created on failed validation");
+
+    // Step C: Valid manual fallback data driving rules engine to CRITICAL risk
+    const criticalFallbackRes = await fetch(
+      `${BASE_URL}/api/cases/${badInputCase.case_id}/manual-fallback`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenPatientA}`,
+        },
+        body: JSON.stringify({
+          chief_complaint: "Severe crushing chest pain radiating to left arm and jaw",
+          duration: "45 minutes",
+          symptoms: "Profuse sweating, severe shortness of breath, dizziness",
+          vitals: {
+            heartRate: 145,
+            systolicBp: 200,
+            diastolicBp: 115,
+            spo2: 87,
+            temperature: 98.6,
+          },
+        }),
+      }
+    );
+    assert.equal(criticalFallbackRes.status, 200, "Valid fallback must return 200");
+    const criticalFallbackData = await criticalFallbackRes.json();
+    assert.equal(criticalFallbackData.case_id, badInputCase.case_id);
+    assert.equal(criticalFallbackData.status, "queued");
+    assert.equal(
+      criticalFallbackData.risk_level,
+      "critical",
+      "Manual data with severe vitals/symptoms must drive rules engine to 'critical'"
+    );
+
+    // Verify report version 1 created with source 'manual'
+    const postVersions = await db
+      .select()
+      .from(caseReportVersions)
+      .where(eq(caseReportVersions.caseId, badInputCase.case_id));
+    assert.equal(postVersions.length, 1);
+    assert.equal(postVersions[0].versionNumber, 1);
+    assert.equal(postVersions[0].source, "manual");
+    const reportContent = postVersions[0].content as any;
+    assert.equal(reportContent.risk_level, "critical");
+    assert.equal(reportContent.chief_complaint?.source, "manual");
+    assert.equal(reportContent.vitals?.source, "manual");
+    assert.equal(reportContent.vitals?.value?.heartRate, 145);
+    assert.equal(reportContent.vitals?.value?.spo2, 87);
+
+    // Step D: Double submission test (Idempotency)
+    // Immediately attempt to submit fallback again on the same case
+    const doubleSubmitRes = await fetch(
+      `${BASE_URL}/api/cases/${badInputCase.case_id}/manual-fallback`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenPatientA}`,
+        },
+        body: JSON.stringify({
+          chief_complaint: "Retry submission with modified text",
+          duration: "1 hour",
+          vitals: { heartRate: 80, spo2: 99 },
+        }),
+      }
+    );
+    assert.equal(
+      doubleSubmitRes.status,
+      409,
+      "Double submission must be rejected with 409 invalid_state_transition"
+    );
+    const doubleSubmitData = await doubleSubmitRes.json();
+    assert.equal(doubleSubmitData.error?.code, "invalid_state_transition");
+
+    // Verify case_report_versions STILL has only 1 row (no duplicate row created)
+    const postDoubleVersions = await db
+      .select()
+      .from(caseReportVersions)
+      .where(eq(caseReportVersions.caseId, badInputCase.case_id));
+    assert.equal(
+      postDoubleVersions.length,
+      1,
+      "Duplicate submission attempt must not create additional case_report_versions rows"
+    );
+
+    // Step E: Doctor Queue Integration Check
+    const queueRes = await fetch(`${BASE_URL}/api/queue`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${tokenDoctor}` },
+    });
+    assert.equal(queueRes.status, 200, "Doctor queue request must succeed");
+    const queueData = await queueRes.json();
+    const queuedItems: any[] = queueData.cases ?? queueData.queue ?? (Array.isArray(queueData) ? queueData : []);
+    const foundInQueue = queuedItems.find((item) => (item.id ?? item.case_id) === badInputCase.case_id);
+    assert.ok(foundInQueue, "Recovered fallback case must appear in doctor queue");
+    assert.equal(
+      foundInQueue.risk_level ?? foundInQueue.riskLevel,
+      "critical",
+      "Case in queue must reflect critical risk level evaluated from manual fallback data"
+    );
+    assert.equal(
+      foundInQueue.status,
+      "queued",
+      "Case in queue must be in 'queued' status"
+    );
+
+    // Doctor can view full case report for clinical review
+    const reviewRes = await fetch(
+      `${BASE_URL}/api/cases/${badInputCase.case_id}/review`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${tokenDoctor}` },
+      }
+    );
+    assert.equal(reviewRes.status, 200, "Doctor review request must return 200");
+    const reviewData = await reviewRes.json();
+    assert.equal(reviewData.report.risk_level, "critical");
+    assert.equal(reviewData.report.chief_complaint.source, "manual");
+    assert.equal(reviewData.report.vitals.source, "manual");
+
+    console.log("  ✓ Failure-recovery loop passed: bad input -> manual_fallback -> rules re-run (critical) -> queued -> doctor queue");
     console.log("\n  ✓ ALL Manual Fallback tests passed successfully!\n");
   } finally {
     // Database cleanup

@@ -490,8 +490,12 @@ async function executeStubExtraction(
     }
   }
 
-  // Test simulation: explicit failure
-  if (input.simulateFailure) {
+  // Test simulation: explicit failure or forced provider failure string
+  if (
+    input.simulateFailure ||
+    input.chiefComplaint?.includes("FORCE_AI_FAILURE") ||
+    input.chiefComplaint?.includes("[SIMULATE_FAILURE]")
+  ) {
     const elapsed = Date.now() - startTime;
     return {
       success: false,
@@ -503,8 +507,14 @@ async function executeStubExtraction(
     };
   }
 
-  // Test simulation: low confidence (Demo Scenario D)
-  if (input.simulateLowConfidence) {
+  // Test simulation: low confidence / unparseable or bad input (Demo Scenario D)
+  if (
+    input.simulateLowConfidence ||
+    input.chiefComplaint?.includes("BAD_INPUT") ||
+    input.chiefComplaint?.includes("UNPARSEABLE_INPUT") ||
+    input.chiefComplaint?.includes("[SIMULATE_LOW_CONFIDENCE]") ||
+    input.symptoms?.includes("UNPARSEABLE_INPUT")
+  ) {
     const elapsed = Date.now() - startTime;
     return {
       success: false,
