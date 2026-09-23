@@ -214,7 +214,24 @@ export async function runCasesManualFallbackTests() {
         nonOwnerRejected = true;
       }
     }
-    assert.ok(nonOwnerRejected, "Non-owner patient must receive 404 not_found");
+    // Non-owner patient attempts on a case that is BOTH not theirs AND not in manual_fallback (e.g. 'submitted')
+    // Anti-enumeration requirement: MUST return 404 not_found, NOT 409 invalid_state_transition
+    let nonOwnerWrongStatusRejectedWith404 = false;
+    try {
+      await submitManualFallback(
+        subCase.id, // status === 'submitted', belongs to Patient A
+        { chief_complaint: "Attacker probing status" },
+        { id: uB.id, role: "patient" } // Patient B (non-owner)
+      );
+    } catch (err) {
+      if (err instanceof AppError && err.statusCode === 404) {
+        nonOwnerWrongStatusRejectedWith404 = true;
+      }
+    }
+    assert.ok(
+      nonOwnerWrongStatusRejectedWith404,
+      "Anti-enumeration: Non-owner on a non-manual_fallback case must receive 404 not_found (never leak status via 409)"
+    );
 
     // Doctor attempts fallback
     let docRejected = false;
@@ -230,7 +247,7 @@ export async function runCasesManualFallbackTests() {
       }
     }
     assert.ok(docRejected, "Doctor must receive 403 forbidden");
-    console.log("  ✓ Ownership confirmed: non-owner gets 404, doctor gets 403");
+    console.log("  ✓ Ownership confirmed: non-owner gets 404 (even on non-fallback cases), doctor gets 403");
 
     // ------------------------------------------------------------------------
     // Test 3: Validation Rigor for Manually-Entered Vitals & Bounds
@@ -420,6 +437,34 @@ export async function runCasesManualFallbackTests() {
       body: JSON.stringify({ chief_complaint: "Hacker attempt" }),
     });
     assert.equal(nonOwnerHttp.status, 404, "HTTP non-owner must get 404");
+    const nonOwnerJson = await nonOwnerHttp.json();
+    assert.equal(nonOwnerJson.error?.code, "not_found", "HTTP non-owner must get not_found code");
+
+    // Anti-enumeration over HTTP: Non-owner patient B attempts on subCase.id
+    // (case exists, belongs to Patient A, and is in status 'submitted' rather than 'manual_fallback')
+    // MUST return 404 not_found, NOT 409 invalid_state_transition
+    const nonOwnerWrongStatusHttp = await fetch(
+      `${BASE_URL}/api/cases/${subCase.id}/manual-fallback`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenPatientB}`,
+        },
+        body: JSON.stringify({ chief_complaint: "Attacker probing status" }),
+      }
+    );
+    assert.equal(
+      nonOwnerWrongStatusHttp.status,
+      404,
+      "HTTP non-owner on non-manual_fallback case must return 404 (never leak case existence/status via 409)"
+    );
+    const nonOwnerWrongStatusJson = await nonOwnerWrongStatusHttp.json();
+    assert.equal(
+      nonOwnerWrongStatusJson.error?.code,
+      "not_found",
+      "Error code must be not_found"
+    );
 
     // Doctor HTTP request -> 403
     const docHttp = await fetch(`${BASE_URL}/api/cases/${httpCase.id}/manual-fallback`, {
