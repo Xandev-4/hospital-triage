@@ -11,6 +11,12 @@ import {
 } from "../../../src/shared/config/schema.js";
 import { eq, inArray } from "drizzle-orm";
 import { env } from "../../../src/shared/config/env.js";
+import { processCase } from "../../../src/modules/processing/processing.service.js";
+import {
+  evaluateRisk,
+  validateDuration,
+  CANONICAL_MISSING_INFO_KEYS,
+} from "../../../src/modules/processing/rules-engine.js";
 
 const BASE_URL = process.env.TEST_API_URL || "http://localhost:8000";
 
@@ -351,6 +357,118 @@ export async function runCasesReportTests() {
     assert.equal(dataC3.chief_complaint.value, "Mild rash on forearm");
     assert.equal(dataC3.chief_complaint.source, "manual");
     assert.equal(dataC3.risk_level, null);
+
+    // 1.8 Explicit Incomplete Case: Missing duration & vitals returned in missing_info
+    console.log("  → Test 1.8: Incomplete case (no duration, no vitals) -> non-empty specific missing_info");
+    const [c4] = await db
+      .insert(triageCases)
+      .values({
+        patientId: pA.id,
+        createdBy: uA.id,
+        consentId: cA.id,
+        mode: "self",
+        status: "processing",
+        chiefComplaint: "Acute crushing chest pain",
+        duration: "", // deliberately omitted
+        symptoms: "heaviness in chest",
+        vitals: {}, // deliberately omitted
+        riskLevel: null,
+      })
+      .returning();
+    createdCaseIds.push(c4.id);
+
+    // Run processing pipeline directly
+    await processCase(c4.id, { id: uA.id, role: "patient" });
+
+    // Fetch report via HTTP endpoint
+    const resC4 = await fetch(`${BASE_URL}/api/cases/${c4.id}/report`, {
+      headers: { Authorization: `Bearer ${tokenPatientA}` },
+    });
+    assert.equal(resC4.status, 200, "Report fetch for incomplete case must succeed");
+    const dataC4 = await resC4.json();
+
+    assert.ok(Array.isArray(dataC4.missing_info), "missing_info must be an array");
+    assert.ok(
+      dataC4.missing_info.length > 0,
+      "missing_info must NOT be empty for an incomplete case"
+    );
+    assert.ok(
+      dataC4.missing_info.includes("duration"),
+      "missing_info must explicitly identify 'duration' as missing"
+    );
+    assert.ok(
+      dataC4.missing_info.includes("vitals"),
+      "missing_info must explicitly identify 'vitals' as missing"
+    );
+    // Confirm every element belongs to the fixed canonical enum-like list
+    for (const key of dataC4.missing_info) {
+      assert.ok(
+        (CANONICAL_MISSING_INFO_KEYS as readonly string[]).includes(key) ||
+          key === "fever_duration" ||
+          key === "radiation_pattern",
+        `Field '${key}' must be from the known canonical enum list`
+      );
+    }
+    console.log(
+      `    ✓ Confirmed missing_info contains specific canonical items: ${JSON.stringify(dataC4.missing_info)}`
+    );
+
+    // 1.9 Distinct Signal Verification: "Missing Info" vs "Malformed Info"
+    console.log("  → Test 1.9: Distinct signals: absent duration ('') vs malformed duration ('the color blue')");
+    // Case A: Absent duration -> missing_info flagged, no anomaly
+    const resAbsent = evaluateRisk({
+      chief_complaint: "fever",
+      duration: "", // absent
+      vitals: { temperature: 101 },
+    });
+    assert.ok(
+      resAbsent.missingCriticalInfo.includes("duration"),
+      "Absent duration must be in missingCriticalInfo"
+    );
+    assert.equal(
+      resAbsent.anomaliesDetected.length,
+      0,
+      "Absent duration must NOT trigger an anomaly"
+    );
+    assert.equal(
+      resAbsent.riskLevel,
+      "medium",
+      "Missing duration on fever must enforce medium floor"
+    );
+
+    // Case B: Malformed duration -> anomaly flagged, NOT in missing_info, fails closed to medium
+    const resMalformed = evaluateRisk({
+      chief_complaint: "fever",
+      duration: "the color blue", // present but garbage non-temporal string
+      vitals: { temperature: 101 },
+    });
+    assert.ok(
+      !resMalformed.missingCriticalInfo.includes("duration"),
+      "Malformed duration was provided, so it must NOT be flagged as absent 'missing_info'"
+    );
+    assert.ok(
+      resMalformed.anomaliesDetected.some((a) => a.includes("the color blue")),
+      "Malformed duration must be recorded in anomaliesDetected"
+    );
+    assert.equal(
+      resMalformed.riskLevel,
+      "medium",
+      "Malformed duration must fail closed to medium risk via anomaly guard (cannot slip through to low)"
+    );
+
+    // Case C: Direct validateDuration helper tests
+    assert.equal(validateDuration(null).status, "absent");
+    assert.equal(validateDuration("").status, "absent");
+    assert.equal(validateDuration("unknown").status, "absent");
+    assert.equal(validateDuration("n/a").status, "absent");
+    assert.equal(validateDuration("the color blue").status, "malformed");
+    assert.equal(validateDuration("banana").status, "malformed");
+    assert.equal(validateDuration("3 days").status, "valid");
+    assert.equal(validateDuration("since yesterday").status, "valid");
+    assert.equal(validateDuration("sudden onset").status, "valid");
+    console.log(
+      "    ✓ Confirmed missing info and malformed info do not collapse into the same signal"
+    );
 
     // ========================================================================
     // PART 2: GET /api/cases/:id/report/versions (Doctor-Only Version History)

@@ -301,6 +301,13 @@ export async function processCase(
 
     const nextVersion = await getNextVersionNumber(caseId);
 
+    const combinedMissingInfo = Array.from(
+      new Set([
+        ...(extractedData.missingInfo || []),
+        ...(evaluatedRisk.missingCriticalInfo || []),
+      ])
+    );
+
     // Write version 1 (or next) into case_report_versions
     await db.insert(caseReportVersions).values({
       caseId,
@@ -323,7 +330,7 @@ export async function processCase(
           value: extractedData.vitals,
           source: "ai",
         },
-        missing_info: extractedData.missingInfo,
+        missing_info: combinedMissingInfo,
         suggested_department: extractedData.suggestedDepartment,
         risk_level: finalRisk,
         ai_rules_disagreement: {

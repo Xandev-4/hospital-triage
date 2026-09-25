@@ -12,6 +12,8 @@
  *   end-to-end pipeline verification without burning API credits or requiring external connectivity.
  */
 
+import { validateDuration } from "./rules-engine.js";
+
 export interface ExtractedVitals {
   spo2?: number | null;
   heartRate?: number | null;
@@ -173,6 +175,30 @@ function detectMissingInfo(
   const text = `${complaint} ${symptoms}`.toLowerCase();
   const missing: string[] = [];
 
+  // 1. General Baseline Checklist (core-design.md Section 8)
+  const durationCheck = validateDuration(duration);
+  if (durationCheck.status === "absent") {
+    missing.push("duration");
+  }
+
+  const hasAnyVitals =
+    vitals &&
+    (vitals.spo2 !== null && vitals.spo2 !== undefined ||
+      vitals.heartRate !== null && vitals.heartRate !== undefined ||
+      vitals.temperature !== null && vitals.temperature !== undefined ||
+      vitals.systolicBp !== null && vitals.systolicBp !== undefined ||
+      vitals.diastolicBp !== null && vitals.diastolicBp !== undefined ||
+      vitals.bloodSugar !== null && vitals.bloodSugar !== undefined);
+
+  if (!hasAnyVitals) {
+    missing.push("vitals");
+  }
+
+  if (!symptoms || symptoms.trim().length === 0) {
+    missing.push("symptoms");
+  }
+
+  // 2. Complaint-specific checklists per core-design.md Section 8
   let category: string | null = null;
   if (/fever|pyrexia|chills|high temp/.test(text)) category = "fever";
   else if (/breath|dyspnea|suffocat|gasp/.test(text))
@@ -196,65 +222,68 @@ function detectMissingInfo(
     category = "general_fatigue_weakness";
 
   if (!category) {
-    return [];
+    return Array.from(new Set(missing));
   }
 
   const checklist = SYMPTOM_CHECKLISTS[category];
-  if (!checklist) {
-    return [];
-  }
-
-  for (const item of checklist) {
-    switch (item) {
-      case "duration":
-        if (!duration || duration.trim().length === 0) {
-          missing.push("duration");
-        }
-        break;
-      case "peak_temperature":
-        if (vitals.temperature === null || vitals.temperature === undefined) {
-          missing.push("peak_temperature");
-        }
-        break;
-      case "spo2_reading":
-        if (vitals.spo2 === null || vitals.spo2 === undefined) {
-          missing.push("spo2_reading");
-        }
-        break;
-      case "blood_sugar_reading":
-        if (vitals.bloodSugar === null || vitals.bloodSugar === undefined) {
-          missing.push("blood_sugar_reading");
-        }
-        break;
-      case "bp_reading":
-        if (
-          vitals.systolicBp === null ||
-          vitals.systolicBp === undefined ||
-          vitals.diastolicBp === null ||
-          vitals.diastolicBp === undefined
-        ) {
-          missing.push("bp_reading");
-        }
-        break;
-      case "radiation":
-        if (
-          !/radiat|spread|arm|jaw|neck|shoulder|back/.test(text) &&
-          category === "chest_pain"
-        ) {
-          missing.push("radiation_pattern");
-        }
-        break;
-      case "associated_symptoms":
-        if (symptoms.trim().length < 5) {
-          missing.push("associated_symptoms");
-        }
-        break;
-      default:
-        break;
+  if (checklist) {
+    for (const item of checklist) {
+      switch (item) {
+        case "peak_temperature":
+          if (
+            (vitals.temperature === null || vitals.temperature === undefined) &&
+            !missing.includes("peak_temperature")
+          ) {
+            missing.push("peak_temperature");
+          }
+          break;
+        case "spo2_reading":
+          if (
+            (vitals.spo2 === null || vitals.spo2 === undefined) &&
+            !missing.includes("spo2_reading")
+          ) {
+            missing.push("spo2_reading");
+          }
+          break;
+        case "blood_sugar_reading":
+          if (
+            (vitals.bloodSugar === null || vitals.bloodSugar === undefined) &&
+            !missing.includes("blood_sugar_reading")
+          ) {
+            missing.push("blood_sugar_reading");
+          }
+          break;
+        case "bp_reading":
+          if (
+            (vitals.systolicBp === null ||
+              vitals.systolicBp === undefined ||
+              vitals.diastolicBp === null ||
+              vitals.diastolicBp === undefined) &&
+            !missing.includes("bp_reading")
+          ) {
+            missing.push("bp_reading");
+          }
+          break;
+        case "radiation":
+          if (
+            !/radiat|spread|arm|jaw|neck|shoulder|back/.test(text) &&
+            category === "chest_pain"
+          ) {
+            if (!missing.includes("radiation_pattern")) {
+              missing.push("radiation_pattern");
+            }
+            if (!missing.includes("radiation")) {
+              missing.push("radiation");
+            }
+          }
+          break;
+        default:
+          break;
+      }
     }
   }
 
-  return missing;
+  return Array.from(new Set(missing));
 }
 
 /**

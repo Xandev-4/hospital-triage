@@ -22,6 +22,14 @@ app.get("/api/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+// Non-Diagnostic Clinical Disclaimer (api-contract.md §9)
+export const NON_DIAGNOSTIC_DISCLAIMER_TEXT =
+  "This system is an automated triage intake assistant and is explicitly non-diagnostic. It organizes information and highlights urgency signals — it never prescribes treatment, never diagnoses, and never replaces a qualified healthcare professional. A licensed medical provider always makes the final clinical decision.";
+
+app.get("/api/disclaimer", (_req, res) => {
+  res.status(200).json({ text: NON_DIAGNOSTIC_DISCLAIMER_TEXT });
+});
+
 // Feature Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/consent", consentRoutes);

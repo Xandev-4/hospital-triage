@@ -278,6 +278,176 @@ function isDurationGreaterThanThreeDays(durationText: string): boolean {
 }
 
 /**
+ * Canonical missing-info keys per core-design.md Section 8
+ */
+export const CANONICAL_MISSING_INFO_KEYS = [
+  "duration",
+  "vitals",
+  "symptoms",
+  "peak_temperature",
+  "spo2_reading",
+  "bp_reading",
+  "blood_sugar_reading",
+  "heart_rate",
+  "onset_speed",
+  "severity",
+  "radiation",
+  "location",
+  "pregnancy_status",
+] as const;
+
+export type CanonicalMissingInfoKey =
+  (typeof CANONICAL_MISSING_INFO_KEYS)[number];
+
+export interface DurationValidationResult {
+  status: "absent" | "valid" | "malformed";
+  normalized: string;
+}
+
+/**
+ * Validates clinical duration string.
+ * Strictly separates:
+ * 1. Absent (null, undefined, empty, or placeholder like "unknown", "n/a")
+ * 2. Valid (contains temporal units or recognized timeframe keywords)
+ * 3. Malformed (non-empty string with zero temporal semantics, e.g. "the color blue")
+ */
+export function validateDuration(
+  rawDuration: unknown
+): DurationValidationResult {
+  if (rawDuration === null || rawDuration === undefined) {
+    return { status: "absent", normalized: "" };
+  }
+  const str =
+    typeof rawDuration === "string"
+      ? rawDuration.trim()
+      : String(rawDuration).trim();
+  if (str.length === 0) {
+    return { status: "absent", normalized: "" };
+  }
+
+  const lower = str.toLowerCase();
+
+  // Explicit non-answers / placeholder tokens that denote absence
+  if (
+    [
+      "unknown",
+      "unspecified",
+      "n/a",
+      "na",
+      "none",
+      "not sure",
+      "dont know",
+      "don't know",
+      "nil",
+      "-",
+      "?",
+    ].includes(lower)
+  ) {
+    return { status: "absent", normalized: "" };
+  }
+
+  // Check for valid temporal indicators
+  const hasTimeUnits =
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|few|couple)\s*(s|sec|seconds?|m|min|minutes?|h|hr|hours?|d|days?|w|wk|weeks?|mo|months?|y|yr|years?)\b/i.test(
+      lower
+    );
+  const hasTemporalPreposition =
+    /\b(since|for|about|over|past|last|within)\s+[a-z0-9]/i.test(lower);
+  const hasTimeKeywords =
+    /\b(yesterday|today|this morning|last night|tonight|just now|recently|recently started|sudden|acute|chronic|gradual|abrupt|intermittent|constant|ongoing|recurrent|long-standing|persisting|persistent|few hours|few days|couple of days|a while)\b/i.test(
+      lower
+    );
+  const hasNumericTimeRange =
+    /\b\d+\s*-\s*\d+\s*(h|hr|hours?|d|days?|w|wk|weeks?|m|min|minutes?|mo|months?)\b/i.test(
+      lower
+    );
+
+  if (
+    hasTimeUnits ||
+    hasTemporalPreposition ||
+    hasTimeKeywords ||
+    hasNumericTimeRange
+  ) {
+    return { status: "valid", normalized: str };
+  }
+
+  // Non-empty string with zero temporal semantics (e.g. "the color blue", "banana")
+  return { status: "malformed", normalized: str };
+}
+
+/**
+ * Detects missing information based on Section 8 checklist comparison.
+ * Returns canonical enum-like keys (e.g. "duration", "vitals", "symptoms").
+ */
+export function detectMissingInfoFromChecklists(
+  chiefComplaint: string,
+  rawDuration: unknown,
+  symptoms: string,
+  vitals: NormalizedVitals
+): string[] {
+  const text = `${chiefComplaint} ${symptoms}`.toLowerCase();
+  const missing: string[] = [];
+
+  const durationCheck = validateDuration(rawDuration);
+  if (durationCheck.status === "absent") {
+    missing.push("duration");
+  }
+
+  if (!vitals.rawPresent) {
+    missing.push("vitals");
+  }
+
+  if (!symptoms || symptoms.trim().length === 0) {
+    missing.push("symptoms");
+  }
+
+  // Category-specific expected checklist items per core-design.md §8
+  if (/fever|pyrexia|chills|high temp/.test(text)) {
+    if (vitals.temperatureF === null && !missing.includes("peak_temperature")) {
+      missing.push("peak_temperature");
+    }
+  }
+
+  if (/breath|dyspnea|suffocat|gasp/.test(text)) {
+    if (vitals.spo2 === null && !missing.includes("spo2_reading")) {
+      missing.push("spo2_reading");
+    }
+  }
+
+  if (/chest pain|angina|chest pressure/.test(text)) {
+    if (
+      (vitals.systolicBp === null || vitals.diastolicBp === null) &&
+      !missing.includes("bp_reading")
+    ) {
+      missing.push("bp_reading");
+    }
+    if (
+      !/radiat|spread|arm|jaw|neck|shoulder|back/.test(text) &&
+      !missing.includes("radiation")
+    ) {
+      missing.push("radiation");
+    }
+  }
+
+  if (/diabetes|blood sugar|glucose/.test(text)) {
+    if (vitals.bloodSugar === null && !missing.includes("blood_sugar_reading")) {
+      missing.push("blood_sugar_reading");
+    }
+  }
+
+  if (/hypertension|high bp|blood pressure/.test(text)) {
+    if (
+      (vitals.systolicBp === null || vitals.diastolicBp === null) &&
+      !missing.includes("bp_reading")
+    ) {
+      missing.push("bp_reading");
+    }
+  }
+
+  return missing;
+}
+
+/**
  * Deterministic Clinical Risk Evaluator.
  *
  * Implements Section 7 of core-design.md:
@@ -298,7 +468,16 @@ export function evaluateRisk(
     ""
   ).trim();
   const symptoms = (input.symptoms ?? "").trim();
-  const duration = (input.duration ?? "").trim();
+  const durationCheck = validateDuration(input.duration);
+  const duration =
+    durationCheck.status === "valid" ? durationCheck.normalized : "";
+
+  if (durationCheck.status === "malformed") {
+    anomaliesDetected.push(
+      `malformed_duration: "${durationCheck.normalized}" (unrecognized timeframe)`
+    );
+  }
+
   const isPregnant = Boolean(input.isPregnant ?? input.is_pregnant);
 
   const combinedText = `${chiefComplaint} ${symptoms}`.toLowerCase();
@@ -759,8 +938,9 @@ export function evaluateRisk(
   // RR-MISSING-01: Fever reported without duration
   // If fever is reported as a primary complaint/symptom but duration is completely absent,
   // do not silently assume short duration (low risk).
-  if (hasFeverMention && !duration) {
+  if (hasFeverMention && durationCheck.status === "absent") {
     missingCriticalInfo.push("fever_duration");
+    missingCriticalInfo.push("duration");
     triggeredRules.push({
       id: "RR-MISSING-01",
       name: "Unspecified Fever Duration",
@@ -789,6 +969,19 @@ export function evaluateRisk(
         "Acute chest or respiratory complaint reported without measured vital signs (SpO2, BP, pulse). Enforces medium risk floor.",
       source: "safety fail-closed missing data guard",
     });
+  }
+
+  // Evaluate Section 8 checklists for missing information
+  const checklistMissing = detectMissingInfoFromChecklists(
+    chiefComplaint,
+    input.duration,
+    symptoms,
+    vitals
+  );
+  for (const item of checklistMissing) {
+    if (!missingCriticalInfo.includes(item)) {
+      missingCriticalInfo.push(item);
+    }
   }
 
   // ============================================================================

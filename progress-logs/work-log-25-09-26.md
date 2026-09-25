@@ -82,9 +82,50 @@ Doctors must be able to inspect not only the latest clinical findings, but also 
   - Case with no versions yet: `200 OK` fallback.
 - Part 2: `GET /api/cases/:id/report/versions`:
   - Direct calls with patient token: `403 forbidden`.
-  - Direct calls with receptionist token: `403 forbidden`.
-  - Unauthenticated calls: `401 unauthorized`.
-  - Doctor calling non-existent case: `404 not_found`.
-  - Doctor calling 1-version case: returns `{ versions: [...] }` with exactly 1 item.
-  - Doctor calling multi-version case: returns 2 versions ordered ascending (`v1: ai`, `v2: manual`).
-- Registered in `tests/run-all.ts`: **All 18 test suites passing 100%**.
+  - Registered in `tests/run-all.ts`: **All 18 test suites passing 100%**.
+
+---
+
+## 4. Missing-Info Detection & Signal Separation (`src/modules/processing/`)
+
+### Clinical Rationale & Distinct Failure Modes
+Per `core-design.md Section 8` ("missing-info detection via checklists"):
+1. **Missing Info vs. Malformed Info Distinction**:
+   - Genuinely absent info (patient never provided a duration or vitals were unmeasured) must trigger specific checklist follow-up questions (`missing_info: ["duration", "vitals", ...]`).
+   - Malformed/garbage input (e.g. `duration = "the color blue"`) must NOT be treated as missing info, nor must it silently pass truthiness checks (`if (duration)`) and evade duration guards. It is flagged as an anomaly (`anomaliesDetected: ["malformed_duration: ..."]`) and triggers `RR-ANOMALY-01`, failing closed to a `medium` risk floor.
+2. **Fixed Canonical Enum Keys**:
+   - `missing_info` entries are strictly constrained to canonical enum-like keys: `"duration"`, `"vitals"`, `"symptoms"`, `"peak_temperature"`, `"spo2_reading"`, `"bp_reading"`, `"blood_sugar_reading"`, `"heart_rate"`, `"onset_speed"`, `"severity"`, `"radiation"`, `"location"`, `"pregnancy_status"`.
+   - Prevents arbitrary, noisy free text from breaking frontend follow-up prompt renderers.
+
+### Key Implementations
+- **`validateDuration` & `detectMissingInfoFromChecklists` in `rules-engine.ts`**:
+  - Differentiates `"absent"` (null/empty/unspecified), `"valid"` (matches temporal patterns/keywords), and `"malformed"` (present string with zero temporal semantics).
+  - Malformed inputs trigger anomaly detection and fail-closed safety floor (`medium`).
+  - Evaluates Section 8 checklists for chest pain, shortness of breath, fever, abdominal pain, neurological, pediatric, and pregnancy presentations.
+- **AI Extraction & Rules Engine Integration (`ai-extraction.ts` & `processing.service.ts`)**:
+  - Combined `extractedData.missingInfo` and `evaluatedRisk.missingCriticalInfo` into deduplicated canonical list.
+  - Persisted into `case_report_versions.content.missing_info` and exposed directly in `GET /api/cases/:id/report`.
+- **Automated Verification (`tests/modules/cases/cases-report.test.ts`)**:
+  - Test 1.8: Incomplete intake (omitted duration & vitals) yields `["duration", "vitals", ...]` in `missing_info` via `GET /api/cases/:id/report`.
+  - Full suite passed: 18 test suites, 0 failures.
+
+---
+
+## 5. Non-Diagnostic Disclaimer Endpoint (`src/app.ts`, `docs/api-contract.md §9`)
+
+### Clinical Rationale & Compliance
+Per `docs/spec.md`, `docs/triage-assistant-core-design.md`, and `docs/api-contract.md §9`:
+The system is explicitly non-diagnostic. Rather than requiring the frontend to hardcode legal/clinical disclaimers in client bundles, `GET /api/disclaimer` exposes the canonical non-diagnostic notice via an unauthenticated, zero-DB endpoint. This ensures single-source-of-truth text management across pre-intake, patient reports, and physician review views.
+
+### Key Implementations
+- **`GET /api/disclaimer` in `src/app.ts`**:
+  - Unauthenticated, static response matching `api-contract.md §9`: `{ "text": "..." }`.
+  - Exports `NON_DIAGNOSTIC_DISCLAIMER_TEXT` constant containing the explicit non-diagnostic notice, human provider primacy, and scope boundary.
+- **Automated Verification (`tests/modules/disclaimer/disclaimer.test.ts`)**:
+  - Test 1: Unauthenticated `GET /api/disclaimer` returns `200 OK` with `{ text }`.
+  - Test 2: Semantic check verifying "non-diagnostic", "organizes information / triage", and human medical provider authority.
+  - Test 3: `GET /api/health` sanity check returns `200 OK` `{ status: "ok" }`.
+- **Master Test Runner Integration**:
+  - Registered in `tests/run-all.ts`: **All 19 test suites passed 100% (262.62s)**.
+
+

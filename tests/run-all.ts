@@ -16,6 +16,7 @@ import { runCasesUploadRouteTests } from "./modules/cases/cases-upload-route.tes
 import { runCasesMultipartTests } from "./modules/cases/cases-multipart.test.js";
 import { runCasesManualFallbackTests } from "./modules/cases/cases-manual-fallback.test.js";
 import { runCasesReportTests } from "./modules/cases/cases-report.test.js";
+import { runDisclaimerTests } from "./modules/disclaimer/disclaimer.test.js";
 
 async function main() {
   console.log(
@@ -84,6 +85,9 @@ async function main() {
 
     // 18. Clinical Report & Version History: GET /api/cases/:id/report & /report/versions
     await runCasesReportTests();
+
+    // 19. Non-Diagnostic Disclaimer & Misc API (API §9): GET /api/disclaimer & /api/health
+    await runDisclaimerTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
