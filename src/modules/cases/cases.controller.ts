@@ -75,6 +75,12 @@ export async function getCaseReport(req: Request, res: Response) {
   res.status(200).json(result);
 }
 
+export async function getReportVersions(req: Request, res: Response) {
+  const caseId = req.params.id as string;
+  const result = await casesService.getReportVersions(caseId, req.user!);
+  res.status(200).json(result);
+}
+
 export async function attachUpload(req: Request, res: Response) {
   const caseId = req.params.id as string;
   const modality = req.body?.modality as "voice" | "image_ocr";

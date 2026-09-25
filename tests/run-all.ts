@@ -15,6 +15,7 @@ import { runCasesUploadServiceTests } from "./modules/cases/cases-upload.test.js
 import { runCasesUploadRouteTests } from "./modules/cases/cases-upload-route.test.js";
 import { runCasesMultipartTests } from "./modules/cases/cases-multipart.test.js";
 import { runCasesManualFallbackTests } from "./modules/cases/cases-manual-fallback.test.js";
+import { runCasesReportTests } from "./modules/cases/cases-report.test.js";
 
 async function main() {
   console.log(
@@ -80,6 +81,9 @@ async function main() {
 
     // 17. Manual Fallback: PATCH /api/cases/:id/manual-fallback & Rules Evaluation
     await runCasesManualFallbackTests();
+
+    // 18. Clinical Report & Version History: GET /api/cases/:id/report & /report/versions
+    await runCasesReportTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

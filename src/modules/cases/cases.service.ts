@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "../../shared/config/db.js";
 import {
   auditLog,
@@ -28,6 +28,7 @@ const MAX_DURATION_LENGTH = 100;
 export interface CaseActor {
   id: string;
   role: UserRole | string;
+  patientId?: string | null;
 }
 
 export interface AttachedFileInput {
@@ -370,11 +371,41 @@ export async function listCases(actor: CaseActor, filters?: ListCasesFilters) {
   };
 }
 
+function extractFieldWithSource<T>(
+  fieldData: any,
+  fallbackValue: T,
+  defaultSource: "ai" | "manual" | "doctor_edit" = "manual"
+): { value: T; source: string } {
+  if (
+    fieldData !== null &&
+    fieldData !== undefined &&
+    typeof fieldData === "object" &&
+    "value" in fieldData &&
+    "source" in fieldData
+  ) {
+    return {
+      value: fieldData.value ?? fallbackValue,
+      source: fieldData.source ?? defaultSource,
+    };
+  }
+  return {
+    value:
+      fieldData !== null && fieldData !== undefined ? fieldData : fallbackValue,
+    source: defaultSource,
+  };
+}
+
 /**
  * Retrieves the latest clinical report for a case.
- * Enforces row-level ownership and returns anti-enumeration 404 if unauthorized.
+ * Enforces row-level ownership and returns anti-enumeration 404 if unauthorized:
+ * - Patient: can only view own case (patientId match)
+ * - Receptionist: can only view case they created (createdBy match)
+ * - Doctor: can view any case
+ * Response shape strictly matches api-contract.md §5:
+ * chief_complaint, duration, symptoms, vitals with per-field { value, source },
+ * missing_info, risk_level, and ai_rules_disagreement.
  */
-export async function getCaseReport(id: string, actor: CaseActor) {
+export async function getReport(id: string, actor: CaseActor) {
   const [caseRecord] = await db
     .select()
     .from(triageCases)
@@ -392,16 +423,20 @@ export async function getCaseReport(id: string, actor: CaseActor) {
       throw AppError.notFound("Case not found");
     }
   } else if (actor.role === "patient") {
-    const [userRecord] = await db
-      .select({ patientId: users.patientId })
-      .from(users)
-      .where(eq(users.id, actor.id));
+    let patientId = actor.patientId;
+    if (!patientId) {
+      const [userRecord] = await db
+        .select({ patientId: users.patientId })
+        .from(users)
+        .where(eq(users.id, actor.id));
+      patientId = userRecord?.patientId ?? null;
+    }
 
-    if (!userRecord || userRecord.patientId !== caseRecord.patientId) {
+    if (!patientId || caseRecord.patientId !== patientId) {
       throw AppError.notFound("Case not found");
     }
   } else {
-    throw AppError.forbidden();
+    throw AppError.forbidden("Unauthorized role for viewing case report");
   }
 
   // Fetch latest version from case_report_versions
@@ -413,30 +448,37 @@ export async function getCaseReport(id: string, actor: CaseActor) {
     .limit(1);
 
   if (latestReport) {
-    const content = latestReport.content as any;
+    const content = (latestReport.content as Record<string, any>) ?? {};
+    const defaultSource = latestReport.source;
     return {
       case_id: caseRecord.id,
       status: caseRecord.status,
-      chief_complaint: content.chief_complaint ?? {
-        value: caseRecord.chiefComplaint ?? "",
-        source: latestReport.source,
-      },
-      duration: content.duration ?? {
-        value: caseRecord.duration ?? "",
-        source: latestReport.source,
-      },
-      symptoms: content.symptoms ?? {
-        value: caseRecord.symptoms ?? "",
-        source: latestReport.source,
-      },
-      vitals: content.vitals ?? {
-        value: caseRecord.vitals ?? {},
-        source: latestReport.source,
-      },
-      missing_info: content.missing_info ?? [],
+      chief_complaint: extractFieldWithSource(
+        content.chief_complaint,
+        caseRecord.chiefComplaint ?? "",
+        defaultSource
+      ),
+      duration: extractFieldWithSource(
+        content.duration,
+        caseRecord.duration ?? "",
+        defaultSource
+      ),
+      symptoms: extractFieldWithSource(
+        content.symptoms,
+        caseRecord.symptoms ?? "",
+        defaultSource
+      ),
+      vitals: extractFieldWithSource(
+        content.vitals,
+        (caseRecord.vitals as Record<string, unknown>) ?? {},
+        defaultSource
+      ),
+      missing_info: Array.isArray(content.missing_info)
+        ? content.missing_info
+        : [],
       risk_level: content.risk_level ?? caseRecord.riskLevel,
       ai_rules_disagreement: content.ai_rules_disagreement ?? {
-        present: caseRecord.aiRulesDisagreement,
+        present: Boolean(caseRecord.aiRulesDisagreement),
         ai_suggested: null,
         rules_result: caseRecord.riskLevel,
         note: null,
@@ -461,17 +503,56 @@ export async function getCaseReport(id: string, actor: CaseActor) {
       source: "manual",
     },
     vitals: {
-      value: caseRecord.vitals ?? {},
+      value: (caseRecord.vitals as Record<string, unknown>) ?? {},
       source: "manual",
     },
     missing_info: [],
     risk_level: caseRecord.riskLevel ?? null,
     ai_rules_disagreement: {
-      present: caseRecord.aiRulesDisagreement,
+      present: Boolean(caseRecord.aiRulesDisagreement),
       ai_suggested: null,
       rules_result: caseRecord.riskLevel,
       note: null,
     },
+  };
+}
+
+export const getCaseReport = getReport;
+
+/**
+ * Retrieves the full report version history for a case.
+ * Doctor-only endpoint per api-contract.md §5 & §10.
+ * Returns array of all versions ordered ascending by version_number (1 -> N).
+ * For a case with only one version (never edited), returns an array with one item.
+ */
+export async function getReportVersions(caseId: string, actor: CaseActor) {
+  if (actor.role !== "doctor") {
+    throw AppError.forbidden("Doctor access required to view report version history");
+  }
+
+  const [caseRecord] = await db
+    .select({ id: triageCases.id })
+    .from(triageCases)
+    .where(eq(triageCases.id, caseId));
+
+  if (!caseRecord) {
+    throw AppError.notFound("Case not found");
+  }
+
+  const versions = await db
+    .select()
+    .from(caseReportVersions)
+    .where(eq(caseReportVersions.caseId, caseId))
+    .orderBy(asc(caseReportVersions.versionNumber));
+
+  return {
+    versions: versions.map((v) => ({
+      version_number: v.versionNumber,
+      source: v.source,
+      content: v.content,
+      edited_by: v.editedBy,
+      created_at: v.createdAt.toISOString(),
+    })),
   };
 }
 
