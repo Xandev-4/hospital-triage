@@ -17,6 +17,9 @@ import { runCasesMultipartTests } from "./modules/cases/cases-multipart.test.js"
 import { runCasesManualFallbackTests } from "./modules/cases/cases-manual-fallback.test.js";
 import { runCasesReportTests } from "./modules/cases/cases-report.test.js";
 import { runDisclaimerTests } from "./modules/disclaimer/disclaimer.test.js";
+import { runAuditRepositoryTests } from "./modules/audit/audit.repository.test.js";
+import { runAuditLoggerTests } from "./modules/audit/audit-logger.test.js";
+import { runAuditRoutesTests } from "./modules/audit/audit.routes.test.js";
 
 async function main() {
   console.log(
@@ -88,6 +91,15 @@ async function main() {
 
     // 19. Non-Diagnostic Disclaimer & Misc API (API §9): GET /api/disclaimer & /api/health
     await runDisclaimerTests();
+
+    // 20. Audit Repository (Lowest Layer): insertAuditEvent & single write-path integrity
+    await runAuditRepositoryTests();
+
+    // 21. Audit Logger (Shared Layer): logAuditEvent, 10-enum safety, metadata sanitization & fail-open
+    await runAuditLoggerTests();
+
+    // 22. Audit Routes & Ownership (API §8): GET /api/cases/:id/audit, anti-enumeration & write-route paranoia
+    await runAuditRoutesTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

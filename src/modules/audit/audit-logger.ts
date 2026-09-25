@@ -1,10 +1,29 @@
-import { db } from "../../shared/config/db.js";
 import {
-  auditLog,
-  type auditEventTypeEnum,
-} from "../../shared/config/schema.js";
+  insertAuditEvent,
+  type DbExecutor,
+  type InsertAuditEventParams,
+} from "./audit.repository.js";
 
-export type AuditEventType = (typeof auditEventTypeEnum.enumValues)[number];
+/**
+ * Canonical 10 Audit Event Types matching the Postgres audit_event_type enum.
+ * Enforces compile-time typo prevention across all consuming modules:
+ * consent_given, intake_submitted, ai_report_generated, status_changed,
+ * report_edited, risk_overridden, assigned, closed, patient_search, patient_created.
+ */
+export const AUDIT_EVENT_TYPES = [
+  "consent_given",
+  "intake_submitted",
+  "ai_report_generated",
+  "status_changed",
+  "report_edited",
+  "risk_overridden",
+  "assigned",
+  "closed",
+  "patient_search",
+  "patient_created",
+] as const;
+
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 
 export interface RecordAuditParams {
   caseId?: string | null;
@@ -14,23 +33,77 @@ export interface RecordAuditParams {
 }
 
 /**
- * Appends an audit event to the append-only audit_log table.
- * Enforces rule #3: "Every important action is logged in an append-only audit trail."
+ * Sanitizes metadata to ensure sensitive credentials or credentials accidentally
+ * passed by callers are redacted before reaching the audit log.
  */
-export async function logAuditEvent(params: RecordAuditParams): Promise<void> {
+function sanitizeAuditMetadata(
+  metadata?: Record<string, unknown> | null
+): Record<string, unknown> | null {
+  if (!metadata || typeof metadata !== "object") return null;
+
+  const SENSITIVE_KEYS = new Set([
+    "password",
+    "passwordhash",
+    "password_hash",
+    "token",
+    "secret",
+    "jwt",
+    "authorization",
+  ]);
+
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+      sanitized[key] = "[REDACTED]";
+    } else {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
+}
+
+/**
+ * Appends an audit event to the append-only audit_log table.
+ *
+ * DESIGN DECISION (Fail-Open for Audit Logging):
+ * Audit logging write failures are caught internally and logged to stderr with [AUDIT WRITE FAILED].
+ * They intentionally DO NOT throw or bubble up to the caller to prevent operational disruption.
+ * For example, a doctor approving a patient discharge, an intake submission, or triage review
+ * must not fail or roll back simply because the secondary audit write encountered an issue.
+ *
+ * TRADEOFF: While this prevents operational downtime for clinical workflows, it creates a potential
+ * audit gap during DB write errors. To ensure visibility, all failures are logged with a standardized,
+ * easily-greppable prefix: `[AUDIT WRITE FAILED]`.
+ *
+ * DATA PRIVACY & BOUNDARY:
+ * Metadata must contain only small, structural facts and delta attributes (e.g. `{ from, to }`,
+ * `{ reason }`, `{ disposition }`, `{ version_number }`). It must NEVER contain full entity objects
+ * (e.g., full patient profile, passwordHash, full case record). Duplicating full records into the
+ * audit_log table violates the principle of least privilege, as audit logs are designed for
+ * provenance tracking and have different retention/access patterns than primary clinical tables.
+ */
+export async function logAuditEvent(
+  params: RecordAuditParams,
+  executor?: DbExecutor
+): Promise<void> {
   try {
-    await db.insert(auditLog).values({
-      caseId: params.caseId ?? null,
-      actorId: params.actorId,
-      eventType: params.eventType,
-      metadata: params.metadata ?? null,
-    });
+    const sanitizedMetadata = sanitizeAuditMetadata(params.metadata);
+
+    await insertAuditEvent(
+      {
+        caseId: params.caseId ?? null,
+        actorId: params.actorId,
+        eventType: params.eventType,
+        metadata: sanitizedMetadata,
+      },
+      executor
+    );
   } catch (err) {
+    // Grep-friendly prefix for observability, log monitoring, and alerting
     console.error(
-      `[Audit Log Failure] Could not record audit event ${params.eventType} for case ${params.caseId}:`,
+      `[AUDIT WRITE FAILED] Failed to record event_type='${params.eventType}' actor_id='${params.actorId}' case_id='${params.caseId ?? "null"}':`,
       err
     );
-    // In dev/test or when audit logging fails, log but do not crash the primary operational flow
-    // unless strictly required.
   }
 }

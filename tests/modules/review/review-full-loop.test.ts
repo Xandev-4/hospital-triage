@@ -427,6 +427,21 @@ export async function runReviewFullLoopTests() {
       `✓ Full audit trail verified with all ${loggedEventTypes.length} lifecycle events!`
     );
 
+    // Verify via GET /api/cases/:id/audit HTTP endpoint for both doctor and patient
+    const auditHttpRes = await fetch(`${BASE_URL}/api/cases/${caseId}/audit`, {
+      headers: { Authorization: `Bearer ${doctorToken}` },
+    });
+    assert.equal(auditHttpRes.status, 200, "Audit trail endpoint must return 200 OK");
+    const auditHttpData = (await auditHttpRes.json()) as { events: Array<Record<string, unknown>> };
+    assert.equal(auditHttpData.events.length, caseAuditLogs.length);
+    console.log(`✓ GET /api/cases/:id/audit verified over HTTP matching all ${auditHttpData.events.length} DB records!`);
+
+    const patientAuditRes = await fetch(`${BASE_URL}/api/cases/${caseId}/audit`, {
+      headers: { Authorization: `Bearer ${patientToken}` },
+    });
+    assert.equal(patientAuditRes.status, 200, "Patient must be allowed to fetch own case audit trail");
+    console.log("✓ Patient successfully retrieved own case audit trail over HTTP");
+
     console.log("\n=======================================================");
     console.log("✓ FULL VERTICAL SLICE END-TO-END TEST PASSED 100%!");
     console.log("=======================================================");

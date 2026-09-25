@@ -280,6 +280,21 @@ export async function editReport(
         .update(triageCases)
         .set(updates)
         .where(eq(triageCases.id, caseId));
+
+      // 5. Append-only audit logging for report_edited inside transaction
+      await logAuditEvent(
+        {
+          caseId,
+          actorId: doctor.id,
+          eventType: "report_edited",
+          metadata: {
+            new_version_number: nextVersionNumber,
+            edited_by: doctor.id,
+            edited_fields: Object.keys(content),
+          },
+        },
+        tx
+      );
     });
   } catch (err: any) {
     if (
@@ -294,18 +309,6 @@ export async function editReport(
     }
     throw err;
   }
-
-  // 5. Append-only audit logging for report_edited
-  await logAuditEvent({
-    caseId,
-    actorId: doctor.id,
-    eventType: "report_edited",
-    metadata: {
-      new_version_number: nextVersionNumber,
-      edited_by: doctor.id,
-      edited_fields: Object.keys(content),
-    },
-  });
 
   return {
     case_id: caseId,
@@ -357,44 +360,49 @@ export async function overrideRiskLevel(
 
   const previousRisk = caseRecord.riskLevel;
 
-  await db
-    .update(triageCases)
-    .set({
-      riskLevel: newLevel as RiskLevel,
-      updatedAt: new Date(),
-    })
-    .where(eq(triageCases.id, caseId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(triageCases)
+      .set({
+        riskLevel: newLevel as RiskLevel,
+        updatedAt: new Date(),
+      })
+      .where(eq(triageCases.id, caseId));
 
-  // Sync risk_level on latest version row if one exists
-  const [latestReport] = await db
-    .select()
-    .from(caseReportVersions)
-    .where(eq(caseReportVersions.caseId, caseId))
-    .orderBy(desc(caseReportVersions.versionNumber))
-    .limit(1);
+    // Sync risk_level on latest version row if one exists
+    const [latestReport] = await tx
+      .select()
+      .from(caseReportVersions)
+      .where(eq(caseReportVersions.caseId, caseId))
+      .orderBy(desc(caseReportVersions.versionNumber))
+      .limit(1);
 
-  if (latestReport) {
-    const updatedContent = {
-      ...(latestReport.content as Record<string, any>),
-      risk_level: newLevel,
-    };
-    await db
-      .update(caseReportVersions)
-      .set({ content: updatedContent })
-      .where(eq(caseReportVersions.id, latestReport.id));
-  }
+    if (latestReport) {
+      const updatedContent = {
+        ...(latestReport.content as Record<string, any>),
+        risk_level: newLevel,
+      };
+      await tx
+        .update(caseReportVersions)
+        .set({ content: updatedContent })
+        .where(eq(caseReportVersions.id, latestReport.id));
+    }
 
-  // Record audit log event: risk_overridden
-  await logAuditEvent({
-    caseId,
-    actorId: doctor.id,
-    eventType: "risk_overridden",
-    metadata: {
-      previous_risk: previousRisk,
-      new_risk: newLevel,
-      reason: trimmedReason,
-      overridden_by: doctor.id,
-    },
+    // Record audit log event: risk_overridden inside transaction
+    await logAuditEvent(
+      {
+        caseId,
+        actorId: doctor.id,
+        eventType: "risk_overridden",
+        metadata: {
+          previous_risk: previousRisk,
+          new_risk: newLevel,
+          reason: trimmedReason,
+          overridden_by: doctor.id,
+        },
+      },
+      tx
+    );
   });
 
   return {
@@ -423,24 +431,29 @@ export async function approveCase(caseId: string, actor: DoctorActorInput) {
   // State machine transition validation: queued -> assigned
   assertValidTransition(caseRecord.status as CaseStatus, "assigned");
 
-  await db
-    .update(triageCases)
-    .set({
-      status: "assigned",
-      updatedAt: new Date(),
-    })
-    .where(eq(triageCases.id, caseId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(triageCases)
+      .set({
+        status: "assigned",
+        updatedAt: new Date(),
+      })
+      .where(eq(triageCases.id, caseId));
 
-  // Record audit log event: assigned
-  await logAuditEvent({
-    caseId,
-    actorId: doctor.id,
-    eventType: "assigned",
-    metadata: {
-      assigned_to: doctor.id,
-      previous_status: caseRecord.status,
-      new_status: "assigned",
-    },
+    // Record audit log event: assigned inside transaction
+    await logAuditEvent(
+      {
+        caseId,
+        actorId: doctor.id,
+        eventType: "assigned",
+        metadata: {
+          assigned_to: doctor.id,
+          previous_status: caseRecord.status,
+          new_status: "assigned",
+        },
+      },
+      tx
+    );
   });
 
   return {
@@ -469,24 +482,29 @@ export async function closeCase(caseId: string, actor: DoctorActorInput) {
   // State machine transition validation: assigned -> closed
   assertValidTransition(caseRecord.status as CaseStatus, "closed");
 
-  await db
-    .update(triageCases)
-    .set({
-      status: "closed",
-      updatedAt: new Date(),
-    })
-    .where(eq(triageCases.id, caseId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(triageCases)
+      .set({
+        status: "closed",
+        updatedAt: new Date(),
+      })
+      .where(eq(triageCases.id, caseId));
 
-  // Record audit log event: closed
-  await logAuditEvent({
-    caseId,
-    actorId: doctor.id,
-    eventType: "closed",
-    metadata: {
-      closed_by: doctor.id,
-      previous_status: caseRecord.status,
-      new_status: "closed",
-    },
+    // Record audit log event: closed inside transaction
+    await logAuditEvent(
+      {
+        caseId,
+        actorId: doctor.id,
+        eventType: "closed",
+        metadata: {
+          closed_by: doctor.id,
+          previous_status: caseRecord.status,
+          new_status: "closed",
+        },
+      },
+      tx
+    );
   });
 
   return {

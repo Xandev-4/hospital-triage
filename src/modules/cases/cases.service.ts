@@ -1,7 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "../../shared/config/db.js";
 import {
-  auditLog,
   caseReportVersions,
   caseUploads,
   patients,
@@ -207,17 +206,20 @@ export async function createCase(input: CreateCaseInput, actor: CaseActor) {
       }
 
       // 2c. Atomic audit event for intake submission
-      await tx.insert(auditLog).values({
-        caseId: newCase.id,
-        actorId: actor.id,
-        eventType: "intake_submitted",
-        metadata: {
-          mode,
-          patient_id: resolvedPatientId,
-          upload_count: attachedUploads.length,
-          modalities: attachedUploads.map((u) => u.modality),
+      await logAuditEvent(
+        {
+          caseId: newCase.id,
+          actorId: actor.id,
+          eventType: "intake_submitted",
+          metadata: {
+            mode,
+            patient_id: resolvedPatientId,
+            upload_count: attachedUploads.length,
+            modalities: attachedUploads.map((u) => u.modality),
+          },
         },
-      });
+        tx
+      );
 
       createdCase = newCase;
     });
@@ -1021,19 +1023,22 @@ export async function submitManualFallback(
     }
 
     // 8. Append audit event
-    await tx.insert(auditLog).values({
-      caseId,
-      actorId: actor.id,
-      eventType: "status_changed",
-      metadata: {
-        from: "manual_fallback",
-        to: "queued",
-        reason: "manual_fallback_submitted",
-        risk_level: evaluatedRisk.riskLevel,
-        triggered_rules_count: evaluatedRisk.triggeredRules.length,
-        report_version: nextVersion,
+    await logAuditEvent(
+      {
+        caseId,
+        actorId: actor.id,
+        eventType: "status_changed",
+        metadata: {
+          from: "manual_fallback",
+          to: "queued",
+          reason: "manual_fallback_submitted",
+          risk_level: evaluatedRisk.riskLevel,
+          triggered_rules_count: evaluatedRisk.triggeredRules.length,
+          report_version: nextVersion,
+        },
       },
-    });
+      tx
+    );
 
     // 9. Return response matching api-contract.md §6
     return {

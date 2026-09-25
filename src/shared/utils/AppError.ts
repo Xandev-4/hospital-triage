@@ -49,8 +49,11 @@ export class AppError extends Error {
     return new AppError("consent_required", message, 403);
   }
 
-  static notFound(message = "Resource not found") {
-    return new AppError("not_found", message, 404);
+  static notFound(
+    message = "Resource not found",
+    details?: Record<string, unknown>
+  ) {
+    return new AppError("not_found", message, 404, details);
   }
 
   static invalidStateTransition(

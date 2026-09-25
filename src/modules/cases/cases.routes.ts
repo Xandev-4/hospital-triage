@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import * as controller from "./cases.controller.js";
 import { requireAuth, requireRole } from "../auth/auth.middleware.js";
 import { reviewRoutes } from "../review/review.routes.js";
+import { auditRoutes } from "../audit/audit.routes.js";
 import { upload, uploadCaseFiles } from "../../shared/config/upload.js";
 import { db } from "../../shared/config/db.js";
 import { triageCases, users } from "../../shared/config/schema.js";
@@ -127,4 +128,8 @@ casesRoutes.patch(
 // Mount doctor review sub-routes under /api/cases
 // GET /:id/review, PATCH /:id/edit, PATCH /:id/risk-level, POST /:id/approve, POST /:id/close
 casesRoutes.use("/", reviewRoutes);
+
+// Mount query-only audit trail sub-routes under /api/cases
+// GET /:id/audit (api-contract.md §8)
+casesRoutes.use("/", auditRoutes);
 

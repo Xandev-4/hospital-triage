@@ -128,4 +128,137 @@ The system is explicitly non-diagnostic. Rather than requiring the frontend to h
 - **Master Test Runner Integration**:
   - Registered in `tests/run-all.ts`: **All 19 test suites passed 100% (262.62s)**.
 
+---
+
+## 6. Audit Repository — Single Write-Path Architecture (`src/modules/audit/audit.repository.ts`)
+
+### Security Rationale & Timestamp Immutability
+Per `docs/triage-assistant-core-design.md Section 10` and `api-contract.md §8`:
+1. **Single Write Path**: Direct queries to `db.insert(auditLog)` across arbitrary services create fragmentation, risk missing events, and open vectors for audit log corruption. `audit.repository.ts:insertAuditEvent` is established as the sole write path in the codebase.
+2. **Strict Timestamp Immutability**: `insertAuditEvent` refuses caller-supplied timestamps (`createdAt` is excluded from parameters). Every entry strictly relies on PostgreSQL's `now()` default, preventing backdating, chronological tampering, or history reordering.
+3. **Nullable `case_id`**: Supports non-case audit events (e.g. `patient_search`, `patient_created`) where no triage case exists.
+4. **Transaction Support**: Accepts an optional transaction executor `executor: DbExecutor = db` so atomic operations (intake creation, fallback submissions) can insert audit events within their transactions.
+
+### Key Implementations
+- **`insertAuditEvent` in `audit.repository.ts`**:
+  - Implemented with `{ caseId, actorId, eventType, metadata }`.
+  - Excluded `createdAt` parameter; relies exclusively on DB `now()`.
+  - Returns `Promise<AuditLogEntry>` using `.returning()`.
+- **Codebase-Wide Grep & Retrofit**:
+  - Audited all existing `.insert(auditLog)` occurrences across the codebase.
+  - Refactored `src/modules/audit/audit-logger.ts` to delegate directly to `insertAuditEvent`.
+  - Refactored `src/modules/cases/cases.service.ts` (intake submission at line 210, manual fallback at line 1024) to call `insertAuditEvent(..., tx)`.
+  - Confirmed via ripgrep that `audit.repository.ts` is now the only file in `src/` calling `.insert(auditLog)`.
+- **Automated Verification (`tests/modules/audit/audit.repository.test.ts`)**:
+  - Test 1: Insert audit event with valid `caseId` and metadata verifies DB-generated `now()` timestamp.
+  - Test 2: Insert non-case audit event with `caseId === null` (`patient_search`).
+  - Test 3: Insert audit event within `db.transaction(async (tx) => ...)`.
+  - Registered in `tests/run-all.ts` as Step 20.
+
+---
+
+## 7. Audit Logger — Shared Function & Resilience Layer (`src/modules/audit/audit-logger.ts`)
+
+### Compile-Time Safety & Resilience Design
+1. **10-Event Union Type Safety**:
+   - Explicitly defines `AUDIT_EVENT_TYPES` covering the exact 10 Postgres enum values:
+     `consent_given`, `intake_submitted`, `ai_report_generated`, `status_changed`, `report_edited`, `risk_overridden`, `assigned`, `closed`, `patient_search`, `patient_created`.
+   - Typos fail immediately at compile time, eliminating invalid or silently corrupted audit data.
+2. **Fail-Open Operational Tradeoff**:
+   - Operational integrity takes precedence over secondary logging. A doctor closing a case, patient submitting intake, or staff reviewing triage must never be blocked or rolled back if an audit write encounters an issue.
+   - Write failures are safely caught internally and logged with a standardized, grep-friendly prefix:
+     `[AUDIT WRITE FAILED] Failed to record event_type='...' actor_id='...' case_id='...': <error>`.
+3. **Data Privacy & Structural Metadata Boundary**:
+   - Metadata is strictly constrained to small, structural facts and delta attributes (e.g. `{ from, to }`, `{ reason }`, `{ disposition }`, `{ version_number }`).
+   - Callers are explicitly documented never to pass full entity records (e.g. full patient objects) to prevent unbounded data duplication into a table with different access control.
+   - Includes automatic redaction for sensitive credential keys (`password`, `passwordHash`, `token`, `secret`, `jwt`).
+
+### Automated Verification (`tests/modules/audit/audit-logger.test.ts`)
+- Test 1: Verifies all 10 canonical enum event types match the Postgres schema.
+- Test 2: Happy-path audit event logging with structural delta metadata.
+- Test 3: Metadata sanitization verifies sensitive credential keys are redacted to `"[REDACTED]"`.
+  - Registered in `tests/run-all.ts` as Step 21.
+
+---
+
+## 8. Audit Read Service & Endpoint (`src/modules/audit/audit.service.ts`, `audit.routes.ts`)
+
+### Clinical Transparency & Anti-Enumeration Architecture
+Per `docs/api-contract.md §8` and `docs/triage-assistant-api-reference.md`:
+1. **Row-Level Ownership & Anti-Enumeration**:
+   - `patient`: Accessible only for their own case (`case.patient_id === actor.patientId`).
+   - `receptionist`: Accessible only for cases they created (`case.created_by === actor.id`).
+   - `doctor`: Unrestricted clinical access across all cases.
+   - Non-owner callers and non-existent case IDs strictly receive `404 not_found` (never `403 forbidden`) to prevent probe-based case enumeration.
+2. **Chronological Event Delivery**:
+   - Events are fetched via `audit.repository.ts:getAuditEventsByCaseId` ordered chronologically ascending (`created_at ASC`).
+   - Response payload conforms strictly to `api-contract.md §8`:
+     `{ events: [{ event_type, actor_id, metadata, created_at }] }`.
+3. **Strict Query-Only Guarantee (No Write Endpoints)**:
+   - Verified that `GET /api/cases/:id/audit` is the sole endpoint exposed.
+   - There are strictly no `POST`, `PUT`, `PATCH`, or `DELETE` write routes on `/audit`. All audit rows are created server-side exclusively as side effects of domain operations.
+4. **Future Granularity Note**:
+   - Documented in `audit.service.ts` that if future internal deliberation events are added to the audit log, case ownership may be augmented with event-type level filtering to protect internal clinician discussions.
+
+### Key Implementations
+- **`getCaseAuditTrail(caseId, actor)` in `audit.service.ts`**:
+  - Implements anti-enumeration ownership matching `getConsentByCase` and `getReport`.
+  - Fallback lookup to `users.patientId` if caller token lacks explicit patient profile ID.
+- **`getCaseAuditTrail` Handler in `audit.controller.ts`**:
+  - Unpacks params and actor context, delegating to service.
+- **`auditRoutes` in `audit.routes.ts` & `cases.routes.ts`**:
+  - Defined query-only route `GET /:id/audit` with `requireAuth`.
+  - Mounted onto `casesRoutes` at `/api/cases/:id/audit`.
+- **Automated Verification (`tests/modules/audit/audit.routes.test.ts`)**:
+  - Part 1: Ownership tests (patient own case $\rightarrow$ 200, patient non-owner $\rightarrow$ 404, receptionist non-creator $\rightarrow$ 404, receptionist creator $\rightarrow$ 200, doctor $\rightarrow$ 200, non-existent $\rightarrow$ 404, unauthenticated $\rightarrow$ 401).
+  - Part 2: Chronological ordering (`created_at ASC`) and exact ISO8601 string formatting verified.
+  - Part 3: Paranoia test confirming `POST`, `PATCH`, and `DELETE` on `/audit` are strictly rejected with 404.
+  - Registered in `tests/run-all.ts` as Step 22.
+
+---
+
+## 9. Comprehensive Module-by-Module Audit Retrofit & Transactional Atomicity
+
+### Transactional Consistency vs. Fail-Open Architecture
+1. **In-Transaction Audit Writes**:
+   - `audit.repository.ts:insertAuditEvent` and `audit-logger.ts:logAuditEvent` accept an optional `executor: DbExecutor = db`.
+   - When operations run inside a database transaction (`db.transaction(async (tx) => ...)`), passing `tx` binds the audit log insert to the exact same atomic transaction as the domain state change.
+   - If the business operation fails and rolls back, the audit record rolls back with it, eliminating "phantom" audit records.
+2. **Deterministic Tiebreaker Ordering**:
+   - Updated `getAuditEventsByCaseId` to order by `asc(auditLog.createdAt), asc(auditLog.id)`.
+   - Guarantees deterministic, reproducible chronological ordering when multiple audit events occur within the same millisecond or transaction.
+3. **Module-by-Module Retrofit Audit**:
+   - **Auth Module**: Confirmed zero raw writes; no retrofit needed.
+   - **Consent Module**: Verified `consent_given` is captured cleanly; no raw writes.
+   - **Cases Module**:
+     - `intake_submitted` in `createCaseWithFiles`: retrofitted from raw insert to `logAuditEvent(..., tx)`.
+     - `status_changed` in `submitManualFallback`: retrofitted from raw insert to `logAuditEvent(..., tx)`.
+     - Removed raw `insertAuditEvent` and `auditLog` schema imports from `cases.service.ts`.
+   - **Processing Module**:
+     - `ai_report_generated` and `status_changed` in `processing.service.ts`: confirmed already using shared `logAuditEvent`.
+   - **Review Module**:
+     - Wrapped `overrideRiskLevel`, `approveCase`, and `closeCase` in `db.transaction(async (tx) => ...)`.
+     - Pass `tx` into `logAuditEvent(..., tx)` for `risk_overridden`, `assigned`, and `closed`.
+     - Moved `report_edited` audit logging inside the transaction block with `tx`.
+
+### Full Lifecycle Verification (`tests/modules/review/review-full-loop.test.ts`)
+- Re-tested the complete end-to-end case lifecycle (`created → processed → reviewed → closed`):
+  1. `intake_submitted` (Patient creates case)
+  2. `status_changed` (`submitted` $\rightarrow$ `queued`)
+  3. `ai_report_generated` (Processing engine emits clinical report)
+  4. `status_changed` (`queued` $\rightarrow$ `queued` rules run)
+  5. `report_edited` (Doctor edits report content)
+  6. `risk_overridden` (Doctor overrides risk level with justification)
+  7. `assigned` (Doctor approves case $\rightarrow$ transitions `queued` $\rightarrow$ `assigned`)
+  8. `closed` (Doctor closes case $\rightarrow$ transitions `assigned` $\rightarrow$ `closed`)
+- Direct HTTP verification of `GET /api/cases/:id/audit`:
+  - Exactly 8 events returned in stable, ascending chronological sequence.
+  - Ownership checked for both doctor and patient tokens.
+- Master Test Runner (`npx tsx tests/run-all.ts`):
+  - **All 22 test suites passed successfully with 0 failures** across the entire codebase in 240.77s.
+
+
+
+
+
 
