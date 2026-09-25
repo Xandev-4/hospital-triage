@@ -9,6 +9,8 @@ import { triageCases, users } from "../../shared/config/schema.js";
 import { eq } from "drizzle-orm";
 import { AppError } from "../../shared/utils/AppError.js";
 
+import { caseCreationRateLimiter } from "../../shared/middleware/rate-limiter.middleware.js";
+
 export const casesRoutes = Router();
 
 // POST /api/cases — multipart/form-data carrying text fields + voice/image attachments in one atomic call (Design 1)
@@ -16,6 +18,7 @@ casesRoutes.post(
   "/",
   requireAuth,
   requireRole("patient", "receptionist"),
+  caseCreationRateLimiter,
   uploadCaseFiles,
   controller.createCase
 );

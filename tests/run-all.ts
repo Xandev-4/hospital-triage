@@ -20,6 +20,10 @@ import { runDisclaimerTests } from "./modules/disclaimer/disclaimer.test.js";
 import { runAuditRepositoryTests } from "./modules/audit/audit.repository.test.js";
 import { runAuditLoggerTests } from "./modules/audit/audit-logger.test.js";
 import { runAuditRoutesTests } from "./modules/audit/audit.routes.test.js";
+import { runOcrTests } from "./modules/processing/ocr.test.js";
+import { runSttTests } from "./modules/processing/speech-to-text.test.js";
+import { runLlmStructuringTests } from "./modules/processing/llm-structuring.test.js";
+import { runDemoScenariosTests } from "./modules/processing/demo-scenarios.test.js";
 
 async function main() {
   console.log(
@@ -100,6 +104,18 @@ async function main() {
 
     // 22. Audit Routes & Ownership (API §8): GET /api/cases/:id/audit, anti-enumeration & write-route paranoia
     await runAuditRoutesTests();
+
+    // 23. Isolated OCR Engine: extractTextFromImage, format verification & quality gating
+    await runOcrTests();
+
+    // 24. Isolated Speech-to-Text: transcribeAudio, duration guard, quality gating
+    await runSttTests();
+
+    // 25. Isolated Clinical LLM Structuring: structureIntake, prompt injection defense, schema & plausibility gating
+    await runLlmStructuringTests();
+
+    // 26. Four Demo Scenarios & Cost/Security Guards (Normal, Missing Info, Disagreement, Corrupt Fallback, Injection Defense, Rate Limiting & Timeouts)
+    await runDemoScenariosTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

@@ -13,6 +13,7 @@ import {
   type ExtractedVitals,
 } from "./ai-extraction.js";
 import { evaluateRisk, type RiskLevel } from "./rules-engine.js";
+import { sanitizeErrorMessage } from "../../shared/utils/sanitize-error.js";
 
 export interface ProcessCaseActor {
   id: string;
@@ -332,6 +333,12 @@ export async function processCase(
         },
         missing_info: combinedMissingInfo,
         suggested_department: extractedData.suggestedDepartment,
+        contributing_inputs: extractedData.contributingInputs ?? {
+          typed_text: true,
+          image_ocr: false,
+          voice_stt: false,
+          failed_inputs: [],
+        },
         risk_level: finalRisk,
         ai_rules_disagreement: {
           present: hasDisagreement,
@@ -379,6 +386,11 @@ export async function processCase(
         rules_result: rulesResult,
         triggered_rules: evaluatedRisk.triggeredRules,
         confidence: extraction.confidence,
+        contributing_inputs: extractedData.contributingInputs ?? {
+          typed_text: true,
+          image_ocr: false,
+          voice_stt: false,
+        },
       },
     });
 
@@ -430,7 +442,9 @@ export async function processCase(
           success: false,
           reason: "unhandled_runtime_bug",
           is_bug: true,
-          errorMessage: err instanceof Error ? err.message : String(err),
+          errorMessage: sanitizeErrorMessage(
+            err instanceof Error ? err.message : String(err)
+          ),
         },
       });
 

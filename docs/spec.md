@@ -123,9 +123,23 @@ If AI and the rules engine disagree, **the rules engine result wins**, and the d
 | 5     | V2 items 5–8 if on track; otherwise consolidate and polish                 |
 | 6     | V3 stretch only if V1+V2 solid; otherwise demo rehearsal + pitch narrative |
 
-## 13. Open Items (not yet finalized)
+## 13. Open Items & Resolved Architectural Choices
 
+### Resolved: LLM / STT / OCR Provider Choices (Zero-Cost / High-Quota Architecture)
+- **Structuring LLM (Raw Text → JSON Report)**: **Google Gemini 3.5 Flash Lite**
+  - *Quota & Budget*: 15 RPM / 250K TPM / 500 Requests Per Day (RPD) via Google Pro allocation. Selected over 20 RPD models to prevent daily quota exhaustion during continuous testing and live judging demos.
+  - *Key Strengths*: Sub-second latency (<800ms), native JSON schema enforcement (`responseSchema`), medical terminology comprehension, and robust handling of Hinglish / multilingual input.
+  - *Fallback / Heavy Load*: `Gemini 3.1 Flash Lite` (500 RPD) or `Gemma 4 26B` (14.4K RPD).
+  - *Rate-Limit & Error Policy*: 429 rate-limiting triggers a single exponential backoff retry (1.5s). Hard API errors, malformed responses, or unresolvable failures transition immediately to `manual_fallback` per core design §8.
+- **Speech-to-Text (Voice → Text)**: **Groq Whisper (`whisper-large-v3`)**
+  - *Quota & Budget*: 100% Free tier on Groq Cloud with high throughput (20 RPM, thousands of audio seconds/day). Avoids the strict 25 RPD cap of Gemini Transcribe.
+  - *Indian Language & Translation Superpower*: Native support for major Indian languages (Hindi, Tamil, Telugu, Marathi, Bengali, Gujarati, Kannada, Malayalam, Punjabi, Urdu) and Indian English. Supports `/openai/v1/audio/translations` to transcribe non-English regional speech directly into clean English text for downstream clinical rule evaluation.
+- **Optical Character Recognition (Image → Text)**: **`Tesseract.js` + Gemini Multimodal Fallback**
+  - *Primary*: `Tesseract.js` running 100% locally in Node.js (zero API key requirements, zero cloud latency/failure risk during live demos, perfectly suited for synthetic/typed lab reports and vital monitor slips).
+  - *Secondary Fallback*: Gemini 3.5 Flash Lite multimodal image inspection for complex or low-contrast handwritten images within the 500 RPD quota.
+
+### Remaining Open Items (not yet finalized)
 - Which single on-site scenario to build for the live demo (e.g. OPD queue triage vs campus fever triage) — blocks synthetic data prep
-- Exact disclaimer wording (placement is decided — Section 2)
+- Exact disclaimer wording (placement is decided — Section 2; general non-diagnostic text already returned by `/api/disclaimer`)
 - Final data retention policy details
-- LLM/STT provider choice — depends on team API budget/access
+

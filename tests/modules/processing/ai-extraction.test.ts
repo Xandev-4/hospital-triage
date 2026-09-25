@@ -157,6 +157,79 @@ export async function runAiExtractionTests() {
     );
   }
 
+  // 7. Multi-Modal Orchestration: Typed Text + Image OCR
+  console.log("\n--- Testing Multi-Modal Orchestration (Typed + Image OCR) ---");
+  {
+    const res = await extractStructuredData({
+      chiefComplaint: "Patient brought in emergency lab report",
+      duration: "1 day",
+      uploadedFiles: [
+        {
+          modality: "image_ocr",
+          filePath: "tests/fixtures/sample-vital-slip.png",
+          mimeType: "image/png",
+        },
+      ],
+    });
+
+    assert.equal(res.success, true);
+    if (res.success) {
+      assert.ok(res.data.contributingInputs?.typed_text, "Typed text should be marked as contributed");
+      assert.ok(res.data.contributingInputs?.image_ocr, "Image OCR should be marked as contributed");
+      assert.equal(res.data.contributingInputs?.failed_inputs.length, 0);
+    }
+    console.log("✓ Multi-modal OCR passed: OCR text and typed text orchestrated successfully");
+  }
+
+  // 8. Multi-Modal Orchestration: Partial Failure (Image OCR fails, but typed text exists)
+  console.log("\n--- Testing Graceful Partial Failure (Image OCR fails, typed text survives) ---");
+  {
+    const res = await extractStructuredData({
+      chiefComplaint: "Acute abdominal pain",
+      duration: "2 hours",
+      uploadedFiles: [
+        {
+          modality: "image_ocr",
+          filePath: "tests/fixtures/blank-image.png", // Blank image fails OCR!
+          mimeType: "image/png",
+        },
+      ],
+    });
+
+    assert.equal(res.success, true, "Pipeline should still succeed on typed text alone");
+    if (res.success) {
+      assert.equal(res.data.chiefComplaint, "Acute abdominal pain");
+      assert.equal(res.data.contributingInputs?.typed_text, true);
+      assert.equal(res.data.contributingInputs?.image_ocr, false);
+      assert.equal(res.data.contributingInputs?.failed_inputs.length, 1);
+      assert.ok(
+        res.data.missingInfo.some((m) => m.includes("unprocessed_image")),
+        "Failed image should be explicitly flagged in missingInfo"
+      );
+    }
+    console.log("✓ Partial failure passed: Typed text survives and unreadable attachment is flagged in missingInfo");
+  }
+
+  // 9. Multi-Modal Orchestration: Total Failure (No typed text AND unreadable upload)
+  console.log("\n--- Testing Total Failure (No typed text and unreadable upload) ---");
+  {
+    const res = await extractStructuredData({
+      uploadedFiles: [
+        {
+          modality: "image_ocr",
+          filePath: "tests/fixtures/blank-image.png",
+          mimeType: "image/png",
+        },
+      ],
+    });
+
+    assert.equal(res.success, false, "Should fail when zero text is available from any source");
+    if (!res.success) {
+      assert.equal(res.reason, "ocr_unreadable");
+    }
+    console.log("✓ Total failure passed: Cleanly routed to manual_fallback when no usable text exists");
+  }
+
   console.log("\n✓ ALL AI Extraction unit tests passed!");
 }
 

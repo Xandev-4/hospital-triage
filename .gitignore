@@ -43,6 +43,7 @@ storage/
 # Multer cache / OCR cache
 .cache/
 ocr-cache/
+*.traineddata
 
 # Local trash directory
 trash/

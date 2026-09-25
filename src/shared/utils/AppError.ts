@@ -6,6 +6,7 @@ export type ErrorCode =
   | "not_found"
   | "invalid_state_transition"
   | "conflict"
+  | "rate_limit_exceeded"
   | "internal_error";
 
 export class AppError extends Error {
@@ -65,6 +66,13 @@ export class AppError extends Error {
 
   static conflict(message: string, details?: Record<string, unknown>) {
     return new AppError("conflict", message, 409, details);
+  }
+
+  static rateLimitExceeded(
+    message = "Too many requests. Please slow down.",
+    details?: Record<string, unknown>
+  ) {
+    return new AppError("rate_limit_exceeded", message, 429, details);
   }
 
   static internal(message = "Something went wrong") {
