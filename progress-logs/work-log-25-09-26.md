@@ -543,3 +543,38 @@ Per `docs/api-contract.md §8` and `docs/triage-assistant-api-reference.md`:
    - Verified unauthorized origin rejection (no `access-control-allow-origin` header emitted).
    - Verified `access-control-allow-credentials: null`.
 
+---
+
+## 19. Comprehensive Edge Rate Limiting & Abuse Defense (`src/shared/middleware/rate-limiter.middleware.ts`)
+
+### Objectives & Threat Model Defense
+1. **Installed `express-rate-limit`**:
+   - Replaced internal in-memory windowing with production-tested `express-rate-limit` leveraging `ipKeyGenerator` for safe IPv6 subnet handling.
+2. **Distinct Keying & Quota Architecture**:
+   - **Login Brute-Force (`POST /api/auth/login`)**:
+     - 5 attempts per 15 minutes per IP (`req.ip`).
+     - Configured with `skipSuccessfulRequests: true` so legitimate patient/staff logins (`200 OK`) never consume the brute-force counter.
+     - 6th consecutive failed attempt is blocked with HTTP 429 (`rate_limit_exceeded`).
+   - **Registration Anti-Flooding (`POST /api/auth/register`)**:
+     - 10 account creations per hour per IP.
+     - Prevents scripted bot account generation and database bloat.
+   - **Case Creation Cost Guard (`POST /api/cases`)**:
+     - 20 case submissions per hour per user account (`req.user.id`).
+     - Protects Gemini LLM and Whisper STT quotas against high-volume abuse.
+   - **Upload Disk & Compute Guard (`POST /api/cases/:id/upload`)**:
+     - 20 uploads per hour per user account (`req.user.id`).
+     - Evaluated **before** Multer file writing and temp buffering to prevent disk exhaustion.
+   - **Consent Ingestion Guard (`POST /api/consent`)**:
+     - 20 submissions per hour per user account (`req.user.id`).
+   - **Zero Leaking in 429 Bodies**:
+     - Generic JSON error response (`{ "error": { "code": "rate_limit_exceeded", "message": "..." } }`) without exposing exact remaining seconds or counters.
+3. **Automated Testing (`tests/modules/auth/auth-rate-limit.test.ts`)**:
+   - Registered as Step 28 in `tests/run-all.ts`.
+   - Verified 5 failed logins return 401, 6th returns 429.
+   - Verified 10 registration attempts return 400 validation, 11th returns 429.
+   - Verified critical operational endpoints (`/api/health`) remain completely unthrottled.
+4. **Documentation Updates**:
+   - Updated `docs/user-guide.md` with complete Edge Rate Limiting policies matrix.
+   - Updated `docs/api-contract.md` §0 with `429 rate_limit_exceeded`.
+
+

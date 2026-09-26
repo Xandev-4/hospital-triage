@@ -27,15 +27,16 @@ All non-2xx responses share this shape:
 }
 ```
 
-| HTTP | `error.code`               | When                                                 |
-| ---- | -------------------------- | ---------------------------------------------------- |
-| 400  | `validation_error`         | Missing/malformed fields                             |
-| 401  | `unauthorized`             | Missing/invalid/expired JWT                          |
-| 403  | `forbidden`                | Valid JWT, wrong role or not the resource owner      |
-| 403  | `consent_required`         | No valid consent record when creating a case         |
-| 404  | `not_found`                | Resource doesn't exist or isn't visible to this user |
-| 409  | `invalid_state_transition` | Action not valid for the case's current `status`     |
-| 500  | `internal_error`           | Unhandled server error                               |
+| HTTP | `error.code`               | When                                                                          |
+| ---- | -------------------------- | ----------------------------------------------------------------------------- |
+| 400  | `validation_error`         | Missing/malformed fields                                                      |
+| 401  | `unauthorized`             | Missing/invalid/expired JWT                                                   |
+| 403  | `forbidden`                | Valid JWT, wrong role or not the resource owner                               |
+| 403  | `consent_required`         | No valid consent record when creating a case                                  |
+| 404  | `not_found`                | Resource doesn't exist or isn't visible to this user                          |
+| 409  | `invalid_state_transition` | Action not valid for the case's current `status`                              |
+| 429  | `rate_limit_exceeded`      | Rate limit quota reached (login brute-force, register, case, upload, consent) |
+| 500  | `internal_error`           | Unhandled server error                                                        |
 
 ---
 

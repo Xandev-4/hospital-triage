@@ -25,6 +25,7 @@ import { runSttTests } from "./modules/processing/speech-to-text.test.js";
 import { runLlmStructuringTests } from "./modules/processing/llm-structuring.test.js";
 import { runDemoScenariosTests } from "./modules/processing/demo-scenarios.test.js";
 import { runCorsTests } from "./modules/cors/cors.test.js";
+import { runAuthRateLimitTests } from "./modules/auth/auth-rate-limit.test.js";
 
 async function main() {
   console.log(
@@ -120,6 +121,9 @@ async function main() {
 
     // 27. CORS configuration and security guards
     await runCorsTests();
+
+    // 28. Edge rate limiting and brute-force/abuse defense
+    await runAuthRateLimitTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

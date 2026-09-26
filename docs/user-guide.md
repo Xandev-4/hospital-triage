@@ -66,6 +66,21 @@ flowchart TD
 | `POST /api/cases/:id/close`            | Finalize / close case              |    ❌     |      ❌       |    ✅    |
 | `GET /api/cases/:id/audit`             | Query immutable audit trail        |    ❌     |      ❌       |    ✅    |
 
+### Edge Rate Limiting & Abuse Defense
+
+To prevent brute-forcing, cloud API budget exhaustion, and database spamming, route-specific rate limiters are mounted on critical ingress points:
+
+| Endpoint                            | Quota                      | Key Strategy            | Primary Protection                                                                                           |
+| :---------------------------------- | :------------------------- | :---------------------- | :----------------------------------------------------------------------------------------------------------- |
+| **`POST /api/auth/login`**          | 5 failed attempts / 15 min | Client IP (`req.ip`)    | **Brute-Force Lockout**: Skips successful logins (`200 OK`); blocks repeated invalid password attempts.      |
+| **`POST /api/auth/register`**       | 10 registrations / hr      | Client IP (`req.ip`)    | **Bot Flooding Defense**: Prevents scripted mass creation of fake patient and user records.                  |
+| **`POST /api/cases`**               | 20 submissions / hr        | User ID (`req.user.id`) | **AI & OCR Cost Guard**: Protects upstream Gemini LLM and Whisper STT quotas from runaway bills.             |
+| **`POST /api/cases/:id/upload`**    | 20 uploads / hr            | User ID (`req.user.id`) | **Disk & Compute Protection**: Evaluated before Multer disk writes to stop disk exhaustion.                  |
+| **`POST /api/consent`**             | 20 submissions / hr        | User ID (`req.user.id`) | **State Flooding Defense**: Restricts excessive creation of consent authorization rows.                      |
+| **`GET /api/queue`, `/api/health`** | _Unthrottled_              | N/A                     | **Clinical Operations**: Guarantees zero latency or lockout for doctor queue review and cloud health probes. |
+
+> **Privacy Note on 429 Responses**: Rate limit responses return a generic HTTP 429 error envelope (`{ "error": { "code": "rate_limit_exceeded", "message": "..." } }`) without exposing exact remaining seconds or attempt counters, denying attackers granular timing information.
+
 ---
 
 ## 2. Prerequisites & First-Time Setup

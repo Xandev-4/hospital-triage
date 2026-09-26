@@ -1,4 +1,9 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import {
+  Router,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import * as controller from "./cases.controller.js";
 import { requireAuth, requireRole } from "../auth/auth.middleware.js";
 import { reviewRoutes } from "../review/review.routes.js";
@@ -9,7 +14,10 @@ import { triageCases, users } from "../../shared/config/schema.js";
 import { eq } from "drizzle-orm";
 import { AppError } from "../../shared/utils/AppError.js";
 
-import { caseCreationRateLimiter } from "../../shared/middleware/rate-limiter.middleware.js";
+import {
+  caseCreationRateLimiter,
+  uploadRateLimiter,
+} from "../../shared/middleware/rate-limiter.middleware.js";
 
 export const casesRoutes = Router();
 
@@ -87,7 +95,11 @@ async function canUploadToCase(
       throw AppError.forbidden("Unauthorized role for case upload");
     }
 
-    const ALLOWED_UPLOAD_STATUSES = ["submitted", "processing", "manual_fallback"];
+    const ALLOWED_UPLOAD_STATUSES = [
+      "submitted",
+      "processing",
+      "manual_fallback",
+    ];
     if (!ALLOWED_UPLOAD_STATUSES.includes(caseRecord.status)) {
       throw AppError.invalidStateTransition(
         `Cannot attach upload to case in '${caseRecord.status}' status. Uploads are only accepted while in early intake states (${ALLOWED_UPLOAD_STATUSES.join(", ")}).`,
@@ -115,6 +127,7 @@ casesRoutes.post(
   "/:id/upload",
   requireAuth,
   requireRole("patient", "receptionist"),
+  uploadRateLimiter,
   canUploadToCase,
   upload.single("file"),
   controller.attachUpload
@@ -135,4 +148,3 @@ casesRoutes.use("/", reviewRoutes);
 // Mount query-only audit trail sub-routes under /api/cases
 // GET /:id/audit (api-contract.md §8)
 casesRoutes.use("/", auditRoutes);
-
