@@ -1,13 +1,29 @@
 import express from "express";
+import cors from "cors";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { consentRoutes } from "./modules/consent/consent.routes.js";
 import { casesRoutes } from "./modules/cases/cases.routes.js";
 import { queueRoutes } from "./modules/queue/queue.routes.js";
 import { errorHandler } from "./shared/middleware/error-handler.js";
+import { env } from "./shared/config/env.js";
 
 export const app = express();
 
 // Global Middlewares
+// CORS: Restricted to configured FRONTEND_URL (default http://localhost:5173 for Vite dev server).
+// Note: credentials is kept false because the API uses Bearer JWT tokens in Authorization headers,
+// not cookies. Avoiding credentials: true minimizes the cross-origin attack surface.
+const allowedOrigins = env.frontendUrl
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+  })
+);
+
 // Explicit payload limit to prevent unbounded JSON/body request exhaustion
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));

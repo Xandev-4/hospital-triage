@@ -24,6 +24,7 @@ import { runOcrTests } from "./modules/processing/ocr.test.js";
 import { runSttTests } from "./modules/processing/speech-to-text.test.js";
 import { runLlmStructuringTests } from "./modules/processing/llm-structuring.test.js";
 import { runDemoScenariosTests } from "./modules/processing/demo-scenarios.test.js";
+import { runCorsTests } from "./modules/cors/cors.test.js";
 
 async function main() {
   console.log(
@@ -116,6 +117,9 @@ async function main() {
 
     // 26. Four Demo Scenarios & Cost/Security Guards (Normal, Missing Info, Disagreement, Corrupt Fallback, Injection Defense, Rate Limiting & Timeouts)
     await runDemoScenariosTests();
+
+    // 27. CORS configuration and security guards
+    await runCorsTests();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 

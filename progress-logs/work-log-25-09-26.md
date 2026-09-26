@@ -514,3 +514,32 @@ Per `docs/api-contract.md §8` and `docs/triage-assistant-api-reference.md`:
    - Tested Receptionist Profile (`GET /api/auth/me`) -> HTTP 200, verified `role: 'receptionist'`.
    - Tested Role Guard: Receptionist attempting doctor-only endpoints (`GET /api/cases/:id/report/versions`, `GET /api/queue`) -> strictly rejected with **HTTP 403 Forbidden**.
    - Tested Receptionist Authorization: `POST /api/cases` passes role guard (not rejected with 403).
+
+---
+
+## 18. CORS Middleware Configuration & Security Architecture (`src/app.ts`)
+
+### Objectives & Security Design
+1. **Early Pipeline Mounting**:
+   - Installed `cors` and `@types/cors` as development dependencies.
+   - Mounted `cors` at the very top of `src/app.ts`, immediately alongside global body parsers, guaranteeing all incoming preflight `OPTIONS` requests and cross-origin routes are validated before reaching endpoint routers.
+2. **Restricted Frontend Origin (No Wildcard `*`)**:
+   - Explicitly disallowed wide-open `cors()` default.
+   - Tied allowed origins to environment variable `FRONTEND_URL` in [env.ts](file:///home/xandev/Programming/Projects/HM-Triage/src/shared/config/env.ts) (defaults to `http://localhost:5173` for Vite dev server).
+   - Supports comma-separated origin strings for multi-domain or staging/preview deployments.
+3. **No Unnecessary `credentials: true`**:
+   - Because HM-Triage authenticates callers via standard `Authorization: Bearer <token>` HTTP headers rather than ambient cookies, `credentials` is intentionally kept **off** (disabled).
+   - Prevents CSRF vectors and eliminates unwanted credential leakage.
+4. **Deployment Architecture Decision**:
+   - **Development**: Decoupled deployment. Frontend runs on `http://localhost:5173` (Vite) while Backend runs on `http://localhost:8000` (Express), connected via CORS.
+   - **Production Options**:
+     - *Separate Hosts*: Frontend on Vercel/Netlify (`https://hm-triage.vercel.app`), Backend on Render/Railway/Fly (`https://api.hm-triage.org`). Production `.env` sets `FRONTEND_URL="https://hm-triage.vercel.app"`.
+     - *Colocated*: Reverse proxy / single domain (e.g. Nginx/Caddy proxying `/api` to Express and `/` to static Vite build), which makes requests same-origin.
+   - Having `FRONTEND_URL` as an environment variable ensures switching between these deployment models requires zero code modifications.
+5. **Automated Test Suite (`tests/modules/cors/cors.test.ts`)**:
+   - Registered as Step 27 in `tests/run-all.ts`.
+   - Verified allowed origin reflection (`access-control-allow-origin: http://localhost:5173`).
+   - Verified 204 No Content for preflight `OPTIONS` requests.
+   - Verified unauthorized origin rejection (no `access-control-allow-origin` header emitted).
+   - Verified `access-control-allow-credentials: null`.
+
