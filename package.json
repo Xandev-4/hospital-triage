@@ -10,6 +10,11 @@
   "scripts": {
     "test": "tsx tests/run-all.ts",
     "dev": "tsx watch src/server.ts",
+    "seed": "tsx src/scripts/seed.ts",
+    "staff": "tsx src/scripts/manage-staff.ts",
+    "staff:list": "tsx src/scripts/manage-staff.ts list",
+    "staff:add": "tsx src/scripts/manage-staff.ts add",
+    "staff:remove": "tsx src/scripts/manage-staff.ts remove",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

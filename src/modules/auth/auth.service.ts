@@ -6,7 +6,11 @@ import { users, patients } from "../../shared/config/schema.js";
 import { env } from "../../shared/config/env.js";
 import { AppError } from "../../shared/utils/AppError.js";
 
-const SALT_ROUNDS = 10;
+export const SALT_ROUNDS = 10;
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, SALT_ROUNDS);
+}
 
 export async function register(input: {
   name: string;
@@ -39,7 +43,7 @@ export async function register(input: {
     throw AppError.validation("Could not register with the provided details");
   }
 
-  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+  const passwordHash = await hashPassword(password);
 
   // Both inserts succeed together or not at all — a user row with no
   // linked patient row (or vice versa) would violate the ERD fix's whole point.

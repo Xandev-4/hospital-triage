@@ -475,3 +475,42 @@ Per `docs/api-contract.md §8` and `docs/triage-assistant-api-reference.md`:
    - Tested secret scrubber: Groq, Gemini, Bearer tokens, and URL keys scrubbed cleanly.
    - Tested request timeouts: 1ms timeout verified across `ocr.ts`, `speech-to-text.ts`, and `llm-structuring.ts`.
 - Registered as Step 26 in `tests/run-all.ts`. All 26/26 test suites passed cleanly in 234.32s!
+
+---
+
+## 17. Staff Account Seeding Tool (`src/scripts/seed.ts`)
+
+### Objectives & Design Highlights
+1. **Developer Tooling Separation**:
+   - Placed in [src/scripts/seed.ts](file:///home/xandev/Programming/Projects/HM-Triage/src/scripts/seed.ts) outside `src/modules/` (dev tool, not runtime business logic).
+   - Added npm script `"seed": "tsx src/scripts/seed.ts"` to [package.json](file:///home/xandev/Programming/Projects/HM-Triage/package.json).
+2. **Reused Core Hashing Logic**:
+   - Exported `SALT_ROUNDS = 10` and `hashPassword(password: string): Promise<string>` from [auth.service.ts](file:///home/xandev/Programming/Projects/HM-Triage/src/modules/auth/auth.service.ts).
+   - Seed script imports `hashPassword` directly, guaranteeing identical bcrypt salt rounds and hashing format without logic duplication.
+3. **Direct Drizzle DB Insertion**:
+   - Inserts directly into `users` table via Drizzle `db.insert(users).values(...)`, correctly setting `patientId: null` for staff accounts.
+   - Bypasses `/api/auth/register` (which strictly and properly restricts self-registration to patients).
+4. **Zero Hardcoded Plaintext Passwords**:
+   - Checks `.env` for overrides (`SEED_DOCTOR_1_PASSWORD`, `SEED_DOCTOR_2_PASSWORD`, `SEED_RECEPTIONIST_1_PASSWORD`, `SEED_RECEPTIONIST_2_PASSWORD`).
+   - If omitted from `.env`, generates cryptographically strong random passwords (`crypto.randomBytes(12).toString("base64url") + "!9Aa"`) per account.
+   - Passwords are strictly unique across all accounts — no credential reuse.
+   - Prints generated credentials once in a console table upon first creation.
+5. **Accidental Execution / Production Guards**:
+   - **Production Guard**: Aborts immediately if `NODE_ENV === "production"` unless explicitly run with `--force`.
+   - **Database Size Guard**: Queries `count()` of existing users; aborts if count > 50 unless `--force` is provided, preventing accidental pollution of populated databases.
+6. **Strict Idempotency**:
+   - Checks for existing accounts by email before inserting.
+   - Skips existing accounts with a clean informational log.
+   - Running `npm run seed` multiple times is safe, produces 0 duplicate records, and exits with code 0.
+7. **Environment Documentation**:
+   - Documented optional seed password overrides in [.env.example](file:///home/xandev/Programming/Projects/HM-Triage/.env.example).
+8. **Live Verification & Role Enforcement Testing (`tests/scripts/verify-seed-staff.ts`)**:
+   - Confirmed 4 staff accounts exist in database with `patientId: null`.
+   - Tested Doctor Login (`POST /api/auth/login`) -> HTTP 200, JWT token returned, `role: 'doctor'`.
+   - Tested Profile Retrieval (`GET /api/auth/me`) -> HTTP 200, verified `role: 'doctor'`, `name: 'Dr. Aisha Sharma'`.
+   - Tested Role Guard: Doctor attempting `POST /api/cases` (patient/receptionist-only) -> strictly rejected with **HTTP 403 Forbidden** (`code: 'forbidden'`).
+   - Tested Doctor Authorization: `GET /api/queue` -> HTTP 200 OK.
+   - Tested Receptionist Login (`POST /api/auth/login`) -> HTTP 200, JWT token returned, `role: 'receptionist'`.
+   - Tested Receptionist Profile (`GET /api/auth/me`) -> HTTP 200, verified `role: 'receptionist'`.
+   - Tested Role Guard: Receptionist attempting doctor-only endpoints (`GET /api/cases/:id/report/versions`, `GET /api/queue`) -> strictly rejected with **HTTP 403 Forbidden**.
+   - Tested Receptionist Authorization: `POST /api/cases` passes role guard (not rejected with 403).

@@ -161,37 +161,64 @@ Run the migrations against your Neon PostgreSQL instance:
 ```bash
 # Push schema directly or apply migrations
 npm run db:push
-# Or execute generated migrations
-npm run db:migrate
 ```
 
-### 4. Run the Development Server
+### 4. Seed Staff Accounts (Doctors & Receptionists)
+
+Bootstrap default hospital staff accounts into your database:
 
 ```bash
-# Using tsx watch
-npx tsx watch src/server.ts
+npm run seed
 ```
+
+### 5. Run the Development Server
+
+```bash
+npm run dev
+```
+
+---
+
+## 📘 User Guide & End-to-End Walkthrough
+
+For a step-by-step walkthrough covering all personas, cURL examples, and operational workflows, refer to the complete guide:
+
+👉 [**Read the Complete User & Operator Guide (`docs/user-guide.md`)**](docs/user-guide.md)
+
+### What's inside the User Guide:
+
+- **Patient Self-Service**: Registration, 30m digital consent window, multimodal intake (text, voice, OCR).
+- **Receptionist Assisted-Intake**: Desk-assisted intake, managing walk-ins, resolving manual fallbacks.
+- **Doctor Clinical Triage**: Urgency-sorted queue, AI review notes, versioned edits, and risk overrides.
+- **Staff Management CLI**: Adding and removing staff members via terminal (`npm run staff:add`, `npm run staff:remove`).
 
 ---
 
 ## 📜 Available Scripts
 
-| Command                | Description                                            |
-| :--------------------- | :----------------------------------------------------- |
-| `npm run format`       | Formats the codebase using Prettier                    |
-| `npm run format:check` | Checks formatting without writing changes              |
-| `npm run db:push`      | Syncs the TypeScript schema directly to the database   |
-| `npm run db:generate`  | Generates a new SQL migration file from schema changes |
-| `npm run db:migrate`   | Runs all pending SQL migrations                        |
-| `npm run db:studio`    | Launches Drizzle Studio GUI in your browser            |
-| `npx tsc --noEmit`     | Performs TypeScript type checking across the project   |
+| Command                | Description                                                          |
+| :--------------------- | :------------------------------------------------------------------- |
+| `npm run dev`          | Starts the development server with hot-reload (`tsx watch`)          |
+| `npm test`             | Runs the full test suite (26 suites covering unit, domain, & HTTP)   |
+| `npm run seed`         | Seeds default staff accounts (`doctor`, `receptionist`) idempotently |
+| `npm run staff:list`   | Lists all active doctors and receptionists in a formatted table      |
+| `npm run staff:add`    | CLI command to add a new doctor or receptionist                      |
+| `npm run staff:remove` | CLI command to safely delete a staff account by email                |
+| `npm run format`       | Formats the codebase using Prettier                                  |
+| `npm run format:check` | Checks formatting without writing changes                            |
+| `npm run db:push`      | Syncs the TypeScript schema directly to the database                 |
+| `npm run db:generate`  | Generates a new SQL migration file from schema changes               |
+| `npm run db:migrate`   | Runs all pending SQL migrations                                      |
+| `npm run db:studio`    | Launches Drizzle Studio GUI in your browser                          |
+| `npx tsc --noEmit`     | Performs TypeScript type checking across the project                 |
 
 ---
 
-## 📖 API Documentation & Specifications
+## 📖 Documentation & Specifications
 
-Detailed architectural specifications and API contracts can be reviewed in the [`docs/`](file:///home/xandev/Programming/Projects/HM-Triage/docs) directory:
+Detailed architectural specifications, user guides, and API contracts can be reviewed in the [`docs/`](file:///home/xandev/Programming/Projects/HM-Triage/docs) directory:
 
+- [**User & Operator Guide**](docs/user-guide.md): Complete end-to-end usage walkthrough for patients, receptionists, and doctors.
 - [**API Contract (V1)**](docs/api-contract.md): Frozen request/response specifications and error envelopes (`{ error: { code, message, details } }`).
 - [**System Specification**](docs/spec.md): Scope, user journeys, edge cases, and non-negotiables.
 - [**Core Design Document**](docs/triage-assistant-core-design.md): In-depth algorithmic decisions, rules engine breakdown, and retention policies.
