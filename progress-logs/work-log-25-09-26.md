@@ -577,4 +577,69 @@ Per `docs/api-contract.md §8` and `docs/triage-assistant-api-reference.md`:
    - Updated `docs/user-guide.md` with complete Edge Rate Limiting policies matrix.
    - Updated `docs/api-contract.md` §0 with `429 rate_limit_exceeded`.
 
+---
+
+## 20. Deterministic Rules Engine Unit Tests & Mutation Verification (`tests/modules/processing/rules-engine.test.ts`)
+
+### Objectives & Testing Architecture
+1. **Automated Unit Tests via Node Built-ins**:
+   - Created standalone unit test suite in `tests/modules/processing/rules-engine.test.ts` utilizing `node:test` and `node:assert/strict` (zero external test runner dependencies).
+   - Designed to run both directly (`npx tsx tests/modules/processing/rules-engine.test.ts`) and integrated into the global suite (`tests/run-all.ts` Step 2).
+
+2. **Full Clinical Rules Coverage**:
+   - **Critical Tier (Level 4)**:
+     - `RR-CRIT-01`: Pulse oximetry `spo2 < 90` (e.g. 88%).
+     - `RR-CRIT-02`: Unconscious / unresponsive state.
+     - `RR-CRIT-03`: Uncontrolled / active arterial hemorrhage.
+     - `RR-CRIT-04`: Severe dyspnea with cyanosis.
+     - `RR-CRIT-05`: Active seizure / status epilepticus.
+     - `RR-CRIT-06`: Severe abdominal pain in pregnant patient.
+     - `RR-CRIT-07`: Acute chest pain radiating to arm / jaw.
+   - **High Tier (Level 3)**:
+     - `RR-HIGH-01`: Chest pain accompanied by diaphoresis.
+     - `RR-HIGH-02`: Severe breathlessness without cyanosis.
+     - `RR-HIGH-03`: Hyperpyrexia (`>= 103°F`) accompanied by delirium / confusion.
+     - `RR-HIGH-04`: Blood sugar extremes (`< 60` or `> 300` mg/dL).
+     - `RR-HIGH-05`: Upper GI or pulmonary bleeding (hematemesis / hemoptysis).
+     - `RR-HIGH-06`: Acute neurological deficit (slurred speech, facial droop).
+     - `RR-HIGH-07`: Hypertensive emergency (`systolic >= 180` or `diastolic >= 120`).
+   - **Medium Tier (Level 2)**:
+     - `RR-MED-01`: Fever persisting `> 3 days`.
+     - `RR-MED-02`: Intractable / persistent vomiting without blood.
+     - `RR-MED-03`: Exertional dyspnea with normal resting state.
+     - `RR-MED-04`: Worsening chronic condition decompensation.
+     - `RR-MED-05`: Acute trauma with notable swelling / deformity.
+   - **Lowest Risk Tier (Level 1)**:
+     - `RR-LOW-01`: Routine / benign presentation (mild headache, normal vitals) defaulting to `low` risk.
+
+3. **Exact Threshold Boundary Tests**:
+   - SpO2: 89% triggers critical (`< 90`); 90% is safe and does not trigger.
+   - Blood Glucose: 59 mg/dL triggers (`< 60`), 60 mg/dL is safe; 300 mg/dL is safe, 301 mg/dL triggers (`> 300`).
+   - Blood Pressure: Systolic 179 safe / 180 triggers; Diastolic 119 safe / 120 triggers.
+   - Temperature: 102.9°F safe / 103.0°F triggers; 39.4°C safe / 39.5°C triggers.
+   - Fever Duration: Exactly 3 days is safe; 4 days triggers `RR-MED-01`.
+
+4. **Multi-Signal & Combination Dominance**:
+   - Concurrently fired 3 medium rules (`RR-MED-01`, `RR-MED-02`, `RR-MED-05`) verifying all trigger IDs are preserved while overall risk resolves cleanly to `medium`.
+   - Concurrently fired Critical (`RR-CRIT-01`), High (`RR-HIGH-07`), and Medium (`RR-MED-01`) rules verifying that the Critical rule strictly dominates the evaluation.
+
+5. **Fail-Closed Malformed Vitals & Missing Info**:
+   - Biologically impossible vitals (300°F temperature, -50 bpm heart rate, 125% SpO2) trigger `RR-ANOMALY-01` and enforce a safety floor.
+   - Missing critical information (fever without duration -> `RR-MISSING-01`, chest pain without vitals -> `RR-MISSING-02`) enforces a `medium` risk floor.
+
+6. **Rules vs. AI Disagreement (Rules Always Win)**:
+   - Evaluated patient with mild complaint ("a little tired") but critical vitals (`spo2: 86`).
+   - Paired with hypothetical AI suggesting `low` risk.
+   - Confirmed `resolveRiskDisagreement` strictly yields `finalRisk: critical` with `disagreement: true`.
+
+7. **Deliberate Mutation Verification (Breakage Testing)**:
+   - **Mutation 1 (`RR-CRIT-01`)**: Mutated `vitals.spo2 < 90` to `< 85`. Re-ran test -> immediately caught and failed with `AssertionError: 'low' !== 'critical'`. Reverted cleanly.
+   - **Mutation 2 (`RR-HIGH-07`)**: Mutated `vitals.systolicBp >= 180` to `>= 200`. Re-ran test -> immediately caught and failed with `AssertionError: 'low' !== 'high'`. Reverted cleanly.
+   - **Mutation 3 (`RR-MED-01`)**: Mutated duration regex to require `6+ days` instead of `4+ days`. Re-ran test -> immediately caught and failed with `AssertionError: 'low' !== 'medium'`. Reverted cleanly.
+
+8. **Full Suite Validation**:
+   - Executed `npm test` covering all 28 test suites end-to-end.
+   - All 28 test suites passed 100% green.
+
+
 

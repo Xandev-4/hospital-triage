@@ -135,3 +135,72 @@ export const consentRateLimiter = rateLimit({
     );
   },
 });
+
+export interface CreateRateLimiterOptions {
+  windowMs?: number;
+  maxRequests?: number;
+  keyGenerator?: (req: Request) => string;
+  message?: string;
+}
+
+interface ClientRecord {
+  timestamps: number[];
+}
+
+/**
+ * Factory for creating in-memory rate limiters (used in tests and lightweight route guards)
+ */
+export function createRateLimiter(options: CreateRateLimiterOptions = {}) {
+  const windowMs = options.windowMs ?? 60_000;
+  const maxRequests = options.maxRequests ?? 15;
+  const message =
+    options.message ??
+    "Too many requests from this account. Please wait before creating another case.";
+  const keyGen =
+    options.keyGenerator ??
+    ((req: Request) => req.user?.id || req.ip || "unknown");
+
+  const clients = new Map<string, ClientRecord>();
+
+  return function rateLimiterMiddleware(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void {
+    const key = keyGen(req);
+    const now = Date.now();
+
+    let record = clients.get(key);
+    if (!record) {
+      record = { timestamps: [] };
+      clients.set(key, record);
+    }
+
+    // Filter out timestamps outside active window
+    record.timestamps = record.timestamps.filter((t) => now - t < windowMs);
+    const count = record.timestamps.length;
+
+    // Set standard RateLimit headers
+    res.setHeader("RateLimit-Limit", maxRequests);
+    res.setHeader("RateLimit-Remaining", Math.max(0, maxRequests - count - 1));
+
+    if (count >= maxRequests) {
+      const oldest = record.timestamps[0] || now;
+      const retryAfterMs = Math.max(1000, windowMs - (now - oldest));
+      const retryAfterSec = Math.ceil(retryAfterMs / 1000);
+
+      res.setHeader("Retry-After", retryAfterSec);
+
+      return next(
+        AppError.rateLimitExceeded(message, {
+          retry_after_seconds: retryAfterSec,
+          max_requests: maxRequests,
+          window_seconds: Math.ceil(windowMs / 1000),
+        })
+      );
+    }
+
+    record.timestamps.push(now);
+    next();
+  };
+}
