@@ -171,7 +171,15 @@ Bootstrap default hospital staff accounts into your database:
 npm run seed
 ```
 
-### 5. Run the Development Server
+### 5. Seed Demo Scenarios (Optional for Presentation / Practice)
+
+Populate the 4 canonical synthetic demo cases (Scenarios A, B, C, D):
+
+```bash
+npm run seed:demo
+```
+
+### 6. Run the Development Server
 
 ```bash
 npm run dev
@@ -196,21 +204,23 @@ For a step-by-step walkthrough covering all personas, cURL examples, and operati
 
 ## 📜 Available Scripts
 
-| Command                | Description                                                          |
-| :--------------------- | :------------------------------------------------------------------- |
-| `npm run dev`          | Starts the development server with hot-reload (`tsx watch`)          |
-| `npm test`             | Runs the full test suite (26 suites covering unit, domain, & HTTP)   |
-| `npm run seed`         | Seeds default staff accounts (`doctor`, `receptionist`) idempotently |
-| `npm run staff:list`   | Lists all active doctors and receptionists in a formatted table      |
-| `npm run staff:add`    | CLI command to add a new doctor or receptionist                      |
-| `npm run staff:remove` | CLI command to safely delete a staff account by email                |
-| `npm run format`       | Formats the codebase using Prettier                                  |
-| `npm run format:check` | Checks formatting without writing changes                            |
-| `npm run db:push`      | Syncs the TypeScript schema directly to the database                 |
-| `npm run db:generate`  | Generates a new SQL migration file from schema changes               |
-| `npm run db:migrate`   | Runs all pending SQL migrations                                      |
-| `npm run db:studio`    | Launches Drizzle Studio GUI in your browser                          |
-| `npx tsc --noEmit`     | Performs TypeScript type checking across the project                 |
+| Command                | Description                                                                    |
+| :--------------------- | :----------------------------------------------------------------------------- |
+| `npm run dev`          | Starts the development server with hot-reload (`tsx watch`)                    |
+| `npm test`             | Runs the full test suite (28 suites covering unit, domain, & HTTP)             |
+| `npm run seed`         | Seeds default staff accounts (`doctor`, `receptionist`) idempotently           |
+| `npm run seed:demo`    | Seeds or resets the 4 canonical synthetic demo cases (A, B, C, D) idempotently |
+| `npm run db:clean`     | Completely wipes test data from all database tables and clears test uploads    |
+| `npm run staff:list`   | Lists all active doctors and receptionists in a formatted table                |
+| `npm run staff:add`    | CLI command to add a new doctor or receptionist                                |
+| `npm run staff:remove` | CLI command to safely delete a staff account by email                          |
+| `npm run format`       | Formats the codebase using Prettier                                            |
+| `npm run format:check` | Checks formatting without writing changes                                      |
+| `npm run db:push`      | Syncs the TypeScript schema directly to the database                           |
+| `npm run db:generate`  | Generates a new SQL migration file from schema changes                         |
+| `npm run db:migrate`   | Runs all pending SQL migrations                                                |
+| `npm run db:studio`    | Launches Drizzle Studio GUI in your browser                                    |
+| `npx tsc --noEmit`     | Performs TypeScript type checking across the project                           |
 
 ---
 

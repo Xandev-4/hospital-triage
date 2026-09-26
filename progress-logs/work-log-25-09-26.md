@@ -641,5 +641,43 @@ Per `docs/api-contract.md §8` and `docs/triage-assistant-api-reference.md`:
    - Executed `npm test` covering all 28 test suites end-to-end.
    - All 28 test suites passed 100% green.
 
+---
+
+## 21. Dedicated Demo Cases Seeder (`src/scripts/seed-demo-cases.ts`)
+
+### Architecture & Design Decisions
+1. **Separation from Account Seeding**:
+   - Kept `seed.ts` (permanent staff accounts) completely distinct from `seed-demo-cases.ts` (rehearsal & live presentation demo scenarios).
+   - Added npm script `"seed:demo": "tsx src/scripts/seed-demo-cases.ts"`.
+
+2. **Environment & Host Safety Guard**:
+   - Parses `DATABASE_URL` safely and outputs only the hostname (`url.hostname` + port) at startup:
+     ```
+     🌐 Target Database Host : ep-billowing-silence-b31at8ha.c-4.ap-southeast-1.aws.neon.tech
+     ⚙️  Environment Mode     : development
+     ```
+   - Safeguards against production accidents by requiring `--force` if `NODE_ENV === "production"`.
+
+3. **Complete Idempotency & Clean Re-runnability**:
+   - Automatically queries for existing demo patients (`name LIKE 'Demo Patient%'` or `phoneNumber LIKE '+1-555-01%'`).
+   - Recursively cascades and purges existing demo audit logs, report versions, triage cases, consents, and users before re-seeding.
+   - Eliminates duplicate proliferation across rehearsal runs.
+
+4. **Realistic, Non-Identifiable Synthetic Patient Data (Non-Negotiable #4)**:
+   - Uses reserved fictitious North American phone numbers (`+1-555-0101` through `+1-555-0104`).
+   - Uses descriptive yet professional synthetic patient names:
+     - `Demo Patient A (Sarah Jenkins)`
+     - `Demo Patient B (Robert Chen)`
+     - `Demo Patient C (Elena Rostova)`
+     - `Demo Patient D (Marcus Vance)`
+   - Keeps clinical prose (`chief_complaint`, `symptoms`) strictly free of ugly internal brackets (`[DEMO]`) so the doctor's queue renders completely natural.
+
+5. **Canonical V1 Scenarios Populated**:
+   - **Scenario A**: Clean intake, tension headache, normal vitals $\rightarrow$ `queued`, `low` risk (Neurology).
+   - **Scenario B**: Missing information (fever without duration or thermometer reading) $\rightarrow$ `queued`, `medium` risk safety floor with follow-up checklist.
+   - **Scenario C**: AI/Rules Disagreement (mild narrative with critical vitals: SpO2 87%, HR 138) $\rightarrow$ `queued`, `critical` risk, `ai_rules_disagreement: true`.
+   - **Scenario D**: Processing failure (illegible handwritten scan) $\rightarrow$ `manual_fallback` with reason `ocr_unreadable`.
+
+
 
 

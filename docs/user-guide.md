@@ -184,6 +184,33 @@ npm run staff:add -- --role receptionist --name "John Doe" --email "john@hospita
 npm run staff:remove -- dr.house@hospital.org
 ```
 
+### Seeding Demo Cases (`npm run seed:demo`)
+
+To prepare for a practice run, rehearsal, or live evaluation demo, populate the database with the 4 canonical synthetic scenarios:
+
+```bash
+npm run seed:demo
+```
+
+- **Host Safety Guard**: Displays `Target Database Host` at startup (credentials scrubbed) and halts in production mode unless `--force` is supplied.
+- **Strictly Idempotent**: Automatically detects and purges previously generated demo data before inserting a fresh set—safe to re-run multiple times without accumulating duplicates.
+- **Judge-Ready Synthetic Data**: Uses reserved fictitious phone numbers (`+1-555-01xx`) and clean patient names without raw debug brackets (`[DEMO]`) leaking into the UI:
+  - **Scenario A** (`Demo Patient A (Sarah Jenkins)`): Clean intake, tension headache $\rightarrow$ `queued`, `low` risk (Neurology).
+  - **Scenario B** (`Demo Patient B (Robert Chen)`): Acute fever with missing duration/vitals $\rightarrow$ `queued`, `medium` risk safety floor with follow-up checklist.
+  - **Scenario C** (`Demo Patient C (Elena Rostova)`): Mild narrative ("tired") with critical vitals (`SpO2 87%`, `HR 138`) $\rightarrow$ `queued`, `critical` risk, `ai_rules_disagreement: true`.
+  - **Scenario D** (`Demo Patient D (Marcus Vance)`): Illegible handwritten scan $\rightarrow$ `manual_fallback` queue ready for receptionist intake completion.
+
+### Complete Database & Test Cleanup (`npm run db:clean`)
+
+To reset the system back to zero state:
+
+```bash
+npm run db:clean
+```
+
+- Truncates all database tables (`CASCADE`) while preserving schemas, enums, foreign keys, and indexes.
+- Purges all temporary files from the `uploads/` directory while keeping [`.gitkeep`](../uploads/.gitkeep).
+
 ---
 
 ## 4. Role 1: Patient Self-Service Workflow
